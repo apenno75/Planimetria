@@ -850,6 +850,19 @@ canvas.addEventListener('click', async (e) => {
     renderLayerList();
     drawCanvas();
     selectElement('point', data.id);
+
+	// --- Feedback visivo immediato ---
+    // Mostra temporaneamente un feedback nel pannello dettagli o nella pagina
+    const detailsEmpty = document.getElementById('details-empty');
+    const originalText = detailsEmpty.textContent;
+    detailsEmpty.style.display = 'block';
+    detailsEmpty.style.color = 'var(--accent)';
+    detailsEmpty.textContent = '✓ Punto aggiunto con successo!';
+    setTimeout(() => {
+      detailsEmpty.style.color = '#9a9a9a';
+      renderDetailsForm(); // Ripristina la visualizzazione corretta dei dettagli del punto
+    }, 1500);	
+	
     return;
   }
 
