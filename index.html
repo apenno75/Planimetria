@@ -361,21 +361,31 @@
       <section id="canvas-area">
         <div id="toolbar">
           <div class="group">
-            <button id="tool-room" data-tool="room"><span class="dot" style="background:var(--room)"></span>Stanze</button>
-            <button id="tool-presa-esistente" data-tool="presa_esistente"><span class="dot" style="background:var(--presa-esistente)"></span>Presa esistente</button>
-            <button id="tool-presa-nuova" data-tool="presa_nuova"><span class="dot" style="background:var(--presa-nuova)"></span>Presa nuova</button>
-            <button id="tool-idrico" data-tool="idrico"><span class="dot" style="background:var(--idrico)"></span>Idrico</button>
-            <button id="tool-gas" data-tool="gas"><span class="dot" style="background:var(--gas)"></span>Gas</button>
+            <button id="tool-room" data-tool="room"><span class="dot" style="background:var(--room)"></span>Disegna stanza</button>
+            <button id="btn-finish-room" style="display:none;">Fine stanza</button>
+            <button id="btn-undo-vertex" style="display:none;">Annulla punto</button>
+          </div>
+          <div class="group">
+            <select id="point-kind">
+              <option value="presa_elettrica">Elettrico</option>
+              <option value="idrico">Idrico</option>
+              <option value="gas">Gas</option>
+            </select>
+            <select id="point-status">
+              <option value="esistente">Esistente</option>
+              <option value="nuova">Nuovo</option>
+            </select>
+            <button id="tool-point" data-tool="point"><span class="dot" id="point-preview-dot" style="background:var(--presa-esistente)"></span>Aggiungi punto</button>
           </div>
           <div class="group">
             <label><input type="checkbox" class="layer-toggle" data-layer="room" checked/> Stanze</label>
-            <label><input type="checkbox" class="layer-toggle" data-layer="presa" checked/> Prese</label>
+            <label><input type="checkbox" class="layer-toggle" data-layer="presa" checked/> Elettrico</label>
             <label><input type="checkbox" class="layer-toggle" data-layer="idrico" checked/> Idrico</label>
             <label><input type="checkbox" class="layer-toggle" data-layer="gas" checked/> Gas</label>
           </div>
           <div class="group">
             <button id="btn-upload">Carica planimetria</button>
-            <input type="file" id="upload-input" accept="image/*" />
+            <input type="file" id="upload-input" accept="image/*" capture="environment" />
           </div>
         </div>
 
@@ -419,17 +429,28 @@ const state = {
   image: null,             // HTMLImageElement caricata
   rooms: [],
   points: [],
-  activeTool: null,        // 'room' | 'presa_esistente' | 'presa_nuova' | 'idrico' | 'gas'
+  activeTool: null,        // 'room' | 'point' | null
   drawingRoomPoints: [],   // vertici in corso per una nuova stanza
   selectedElement: null,   // { type:'room'|'point', id }
 };
 
-const TOOL_TO_KIND_STATUS = {
-  presa_esistente: { kind: 'presa_elettrica', status: 'esistente' },
-  presa_nuova:      { kind: 'presa_elettrica', status: 'nuova' },
-  idrico:           { kind: 'idrico', status: 'esistente' },
-  gas:              { kind: 'gas', status: 'esistente' },
+// Colori dei punti impianto per tipo e stato (esistente/nuovo)
+const POINT_COLORS = {
+  presa_elettrica: { esistente: '#c9821f', nuova: '#2f8f4e' },
+  idrico:          { esistente: '#2196c9', nuova: '#7fd3ff' },
+  gas:             { esistente: '#b23a3a', nuova: '#e08585' },
 };
+const KIND_LABELS = { presa_elettrica: 'Elettrico', idrico: 'Idrico', gas: 'Gas' };
+
+function updatePointPreviewDot() {
+  const kind = document.getElementById('point-kind').value;
+  const status = document.getElementById('point-status').value;
+  const dot = document.getElementById('point-preview-dot');
+  if (dot) dot.style.background = (POINT_COLORS[kind] && POINT_COLORS[kind][status]) || '#555';
+}
+document.getElementById('point-kind').addEventListener('change', updatePointPreviewDot);
+document.getElementById('point-status').addEventListener('change', updatePointPreviewDot);
+updatePointPreviewDot();
 
 /* =========================================================
    AUTENTICAZIONE
@@ -515,6 +536,8 @@ document.getElementById('empty-add-floor').addEventListener('click', addFloor);
 
 async function selectFloor(floorId) {
   state.activeFloorId = floorId;
+  state.selectedElement = null;
+  renderDetailsForm();
   renderFloorList();
   await loadActiveFloorPlan();
 }
@@ -538,6 +561,8 @@ async function loadActiveFloorPlan() {
     document.getElementById('plan-canvas').style.display = 'none';
     state.rooms = [];
     state.points = [];
+    renderLayerList();
+    renderDetailsForm();
     return;
   }
 
@@ -620,6 +645,12 @@ async function loadRoomsAndPoints() {
 /* =========================================================
    STRUMENTI (toolbar)
    ========================================================= */
+function updateRoomDrawingButtons() {
+  const show = state.activeTool === 'room';
+  document.getElementById('btn-finish-room').style.display = show ? 'inline-flex' : 'none';
+  document.getElementById('btn-undo-vertex').style.display = show ? 'inline-flex' : 'none';
+}
+
 document.querySelectorAll('#toolbar [data-tool]').forEach(btn => {
   btn.addEventListener('click', () => {
     const tool = btn.dataset.tool;
@@ -628,7 +659,23 @@ document.querySelectorAll('#toolbar [data-tool]').forEach(btn => {
     document.querySelectorAll('#toolbar [data-tool]').forEach(b =>
       b.classList.toggle('active', b.dataset.tool === state.activeTool)
     );
+    updateRoomDrawingButtons();
+    drawCanvas();
   });
+});
+
+document.getElementById('btn-undo-vertex').addEventListener('click', () => {
+  state.drawingRoomPoints.pop();
+  drawCanvas();
+});
+
+document.getElementById('btn-finish-room').addEventListener('click', () => completeRoom());
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && state.activeTool === 'room' && state.drawingRoomPoints.length) {
+    state.drawingRoomPoints = [];
+    drawCanvas();
+  }
 });
 
 document.querySelectorAll('.layer-toggle').forEach(cb => {
@@ -694,11 +741,6 @@ function drawCanvas() {
   }
 
   // punti impianto
-  const colors = {
-    presa_elettrica: { esistente: '#c9821f', nuova: '#2f8f4e' },
-    idrico: { esistente: '#2196c9', nuova: '#2196c9' },
-    gas: { esistente: '#b23a3a', nuova: '#b23a3a' },
-  };
   state.points.forEach(pt => {
     if (pt.kind === 'presa_elettrica' && !showPrese) return;
     if (pt.kind === 'idrico' && !showIdrico) return;
@@ -707,7 +749,7 @@ function drawCanvas() {
     const isSelected = state.selectedElement &&
       state.selectedElement.type === 'point' && state.selectedElement.id === pt.id;
     const x = pt.x * canvas.width, y = pt.y * canvas.height;
-    const color = (colors[pt.kind] && colors[pt.kind][pt.status]) || '#555';
+    const color = (POINT_COLORS[pt.kind] && POINT_COLORS[pt.kind][pt.status]) || '#555';
 
     if (isSelected) {
       ctx.beginPath();
@@ -774,7 +816,7 @@ function findRoomAt(x, y) {
 }
 
 canvas.addEventListener('click', async (e) => {
-  if (!state.activeTool || !state.activeFloorPlan) return;
+  if (!state.activeFloorPlan) return;
   const rect = canvas.getBoundingClientRect();
   const x = (e.clientX - rect.left) / rect.width;
   const y = (e.clientY - rect.top) / rect.height;
@@ -785,31 +827,47 @@ canvas.addEventListener('click', async (e) => {
     return;
   }
 
-  const conf = TOOL_TO_KIND_STATUS[state.activeTool];
-  if (!conf) return;
+  if (state.activeTool === 'point') {
+    const kind = document.getElementById('point-kind').value;
+    const status = document.getElementById('point-status').value;
 
-  const { data, error } = await supabase
-    .from('installation_points')
-    .insert({
-      floor_plan_id: state.activeFloorPlan.id,
-      user_id: state.user.id,
-      kind: conf.kind,
-      status: conf.status,
-      x, y,
-    })
-    .select()
-    .single();
-  if (error) { alert(error.message); return; }
+    const { data, error } = await supabase
+      .from('installation_points')
+      .insert({
+        floor_plan_id: state.activeFloorPlan.id,
+        user_id: state.user.id,
+        kind, status,
+        x, y,
+      })
+      .select()
+      .single();
+    if (error) { alert(error.message); return; }
 
-  state.points.push(data);
+    state.points.push(data);
+    renderLayerList();
+    drawCanvas();
+    selectElement('point', data.id);
+    return;
+  }
+
+  // nessuno strumento attivo: prova a selezionare un elemento esistente
+  const pt = findPointNear(x, y);
+  if (pt) { selectElement('point', pt.id); return; }
+  const room = findRoomAt(x, y);
+  if (room) { selectElement('room', room.id); return; }
+  state.selectedElement = null;
+  renderDetailsForm();
   renderLayerList();
   drawCanvas();
-  selectElement('point', data.id);
 });
 
-// doppio click per chiudere il poligono stanza in corso
-canvas.addEventListener('dblclick', async () => {
-  if (state.activeTool !== 'room' || state.drawingRoomPoints.length < 3) return;
+// chiude il poligono stanza in corso (richiamato da doppio click o dal bottone "Fine stanza")
+async function completeRoom() {
+  if (state.activeTool !== 'room') return;
+  if (state.drawingRoomPoints.length < 3) {
+    alert('Servono almeno 3 punti per chiudere una stanza.');
+    return;
+  }
   const name = prompt('Nome della stanza:');
   if (!name) { state.drawingRoomPoints = []; drawCanvas(); return; }
 
@@ -830,7 +888,10 @@ canvas.addEventListener('dblclick', async () => {
   state.rooms.push(data);
   renderLayerList();
   drawCanvas();
-});
+}
+
+// doppio click per chiudere il poligono stanza in corso
+canvas.addEventListener('dblclick', () => completeRoom());
 
 /* =========================================================
    PANNELLO DETTAGLI + LISTA LAYER
@@ -839,20 +900,21 @@ canvas.addEventListener('dblclick', async () => {
 function renderLayerList() {
   const container = document.getElementById('layer-list');
   container.innerHTML = '<h2>Elementi in questo piano</h2>';
+  const sel = state.selectedElement;
 
   state.rooms.forEach(r => {
     const row = document.createElement('div');
-    row.className = 'layer-row';
+    row.className = 'layer-row' + (sel && sel.type === 'room' && sel.id === r.id ? ' selected' : '');
     row.textContent = '▢ ' + r.name;
     row.addEventListener('click', () => selectElement('room', r.id));
     container.appendChild(row);
   });
 
-  const kindLabel = { presa_elettrica: 'Presa', idrico: 'Idrico', gas: 'Gas' };
+  const statusLabel = { esistente: 'esistente', nuova: 'nuovo' };
   state.points.forEach(p => {
     const row = document.createElement('div');
-    row.className = 'layer-row';
-    row.textContent = '● ' + (p.label || kindLabel[p.kind]) + ' (' + p.status + ')';
+    row.className = 'layer-row' + (sel && sel.type === 'point' && sel.id === p.id ? ' selected' : '');
+    row.textContent = '● ' + (p.label || KIND_LABELS[p.kind] || p.kind) + ' (' + (statusLabel[p.status] || p.status) + ')';
     row.addEventListener('click', () => selectElement('point', p.id));
     container.appendChild(row);
   });
@@ -860,8 +922,142 @@ function renderLayerList() {
 
 function selectElement(type, id) {
   state.selectedElement = { type, id };
-  // Il form dei dettagli (modifica nome/etichetta/note, eliminazione)
-  // viene implementato nella prossima parte.
+  renderDetailsForm();
+  renderLayerList();
+  drawCanvas();
+}
+
+/* =========================================================
+   PANNELLO DETTAGLI — form di modifica ed eliminazione
+   ========================================================= */
+function renderDetailsForm() {
+  const emptyEl = document.getElementById('details-empty');
+  const formEl = document.getElementById('details-form');
+  const sel = state.selectedElement;
+
+  if (!sel) {
+    emptyEl.style.display = 'block';
+    formEl.style.display = 'none';
+    formEl.innerHTML = '';
+    return;
+  }
+
+  emptyEl.style.display = 'none';
+  formEl.style.display = 'block';
+
+  if (sel.type === 'room') {
+    const room = state.rooms.find(r => r.id === sel.id);
+    if (!room) { state.selectedElement = null; renderDetailsForm(); return; }
+
+    formEl.innerHTML = `
+      <div class="field">
+        <label>Nome stanza</label>
+        <input type="text" id="detail-room-name" value="${escapeHtml(room.name || '')}" />
+      </div>
+      <div class="field">
+        <label>Colore</label>
+        <input type="color" id="detail-room-color" value="${room.color || '#3b82f6'}" />
+      </div>
+      <button class="save-btn" id="detail-save">Salva</button>
+      <button class="delete" id="detail-delete">Elimina stanza</button>
+    `;
+
+    document.getElementById('detail-save').addEventListener('click', async () => {
+      const name = document.getElementById('detail-room-name').value.trim();
+      const color = document.getElementById('detail-room-color').value;
+      if (!name) { alert('Il nome non può essere vuoto.'); return; }
+      const { error } = await supabase.from('rooms').update({ name, color }).eq('id', room.id);
+      if (error) { alert(error.message); return; }
+      room.name = name;
+      room.color = color;
+      renderLayerList();
+      drawCanvas();
+    });
+
+    document.getElementById('detail-delete').addEventListener('click', async () => {
+      if (!confirm('Eliminare la stanza "' + room.name + '"?')) return;
+      const { error } = await supabase.from('rooms').delete().eq('id', room.id);
+      if (error) { alert(error.message); return; }
+      state.rooms = state.rooms.filter(r => r.id !== room.id);
+      state.points.forEach(p => { if (p.room_id === room.id) p.room_id = null; });
+      state.selectedElement = null;
+      renderDetailsForm();
+      renderLayerList();
+      drawCanvas();
+    });
+    return;
+  }
+
+  if (sel.type === 'point') {
+    const point = state.points.find(p => p.id === sel.id);
+    if (!point) { state.selectedElement = null; renderDetailsForm(); return; }
+
+    const roomOptions = ['<option value="">— nessuna —</option>']
+      .concat(state.rooms.map(r => `<option value="${r.id}" ${point.room_id === r.id ? 'selected' : ''}>${escapeHtml(r.name)}</option>`))
+      .join('');
+
+    formEl.innerHTML = `
+      <div class="field">
+        <label>Tipo impianto</label>
+        <input type="text" value="${KIND_LABELS[point.kind] || point.kind}" disabled />
+      </div>
+      <div class="field">
+        <label>Stato</label>
+        <select id="detail-point-status">
+          <option value="esistente" ${point.status === 'esistente' ? 'selected' : ''}>Esistente</option>
+          <option value="nuova" ${point.status === 'nuova' ? 'selected' : ''}>Nuovo</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Etichetta (facoltativa)</label>
+        <input type="text" id="detail-point-label" value="${escapeHtml(point.label || '')}" placeholder="es. Presa TV" />
+      </div>
+      <div class="field">
+        <label>Stanza di appartenenza</label>
+        <select id="detail-point-room">${roomOptions}</select>
+      </div>
+      <div class="field">
+        <label>Note</label>
+        <textarea id="detail-point-notes" placeholder="es. altezza da terra, misure...">${escapeHtml(point.notes || '')}</textarea>
+      </div>
+      <button class="save-btn" id="detail-save">Salva</button>
+      <button class="delete" id="detail-delete">Elimina punto</button>
+    `;
+
+    document.getElementById('detail-save').addEventListener('click', async () => {
+      const status = document.getElementById('detail-point-status').value;
+      const label = document.getElementById('detail-point-label').value.trim();
+      const room_id = document.getElementById('detail-point-room').value || null;
+      const notes = document.getElementById('detail-point-notes').value.trim();
+      const { error } = await supabase.from('installation_points')
+        .update({ status, label, room_id, notes })
+        .eq('id', point.id);
+      if (error) { alert(error.message); return; }
+      point.status = status;
+      point.label = label;
+      point.room_id = room_id;
+      point.notes = notes;
+      renderLayerList();
+      drawCanvas();
+    });
+
+    document.getElementById('detail-delete').addEventListener('click', async () => {
+      if (!confirm('Eliminare questo punto?')) return;
+      const { error } = await supabase.from('installation_points').delete().eq('id', point.id);
+      if (error) { alert(error.message); return; }
+      state.points = state.points.filter(p => p.id !== point.id);
+      state.selectedElement = null;
+      renderDetailsForm();
+      renderLayerList();
+      drawCanvas();
+    });
+  }
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[ch]));
 }
 
 /* =========================================================
