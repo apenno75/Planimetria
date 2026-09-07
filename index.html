@@ -429,10 +429,10 @@
 /* =========================================================
    CONFIGURAZIONE SUPABASE (Evita ridefinizioni duplicate)
    ========================================================= */
-const SUPABASE_URL = "https://erukzvrtjnvyzjvfuirn.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_FDhQ03affjzeyhCHuoKulg_Rp7PdyLM";
+  SUPABASE_URL = "https://erukzvrtjnvyzjvfuirn.supabase.co";
+  SUPABASE_ANON_KEY = "sb_publishable_FDhQ03affjzeyhCHuoKulg_Rp7PdyLM";
 window.supabaseClient = window.supabaseClient || window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-const supabase = window.supabaseClient;
+  supabase = window.supabaseClient;
 
 /* =========================================================
    STATO GLOBALE (con supporto Zoom e Pan)
