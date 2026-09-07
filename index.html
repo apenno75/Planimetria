@@ -419,7 +419,7 @@
 // Rimuovi 'const' se la variabile è già dichiarata altrove nello scope globale, 
 // oppure usa un controllo di assegnazione:
 window.supabaseClient = window.supabaseClient || window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-const supabase = window.supabaseClient;
+  supabase = window.supabaseClient;
 
 /* =========================================================
    STATO GLOBALE
