@@ -282,6 +282,46 @@
   }
   #upload-input { display: none; }
 
+  /* Legenda Colori Mappa */
+  #map-legend {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(4px);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    font-size: 0.75rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    z-index: 10;
+    pointer-events: none;
+  }
+  #map-legend h3 {
+    margin: 0 0 6px 0;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6b6b6b;
+  }
+  .legend-grid {
+    display: grid;
+    grid-template-columns: auto 1fr 1fr;
+    gap: 4px 10px;
+    align-items: center;
+  }
+  .legend-header {
+    font-weight: 600;
+    color: #7a7a7a;
+    font-size: 0.7rem;
+    text-align: center;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
   /* ---------- Pannello Destro / Dettagli ---------- */
   #details {
     width: 280px;
@@ -403,6 +443,7 @@
       display: none;
     }
   }
+  
 </style>
 </head>
 <body>
@@ -483,6 +524,28 @@
             <button id="empty-add-floor">Aggiungi il primo piano</button>
           </div>
           <canvas id="plan-canvas" style="display:none;"></canvas>
+
+          <!-- Legenda Mappa -->
+          <div id="map-legend">
+            <h3>Legenda</h3>
+            <div class="legend-grid">
+              <div></div>
+              <div class="legend-header">Esistente</div>
+              <div class="legend-header">Nuovo</div>
+
+              <div>Elettrico</div>
+              <div class="legend-item"><span class="dot" style="background:#c9821f"></span></div>
+              <div class="legend-item"><span class="dot" style="background:#2f8f4e"></span></div>
+
+              <div>Idrico</div>
+              <div class="legend-item"><span class="dot" style="background:#2196c9"></span></div>
+              <div class="legend-item"><span class="dot" style="background:#7fd3ff"></span></div>
+
+              <div>Gas</div>
+              <div class="legend-item"><span class="dot" style="background:#b23a3a"></span></div>
+              <div class="legend-item"><span class="dot" style="background:#e08585"></span></div>
+            </div>
+          </div>
         </div>
       </section>
 
