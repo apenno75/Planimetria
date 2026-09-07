@@ -210,7 +210,7 @@
 
   #canvas-wrap{
     flex:1;
-    overflow:auto;
+    overflow:hidden;
     background:#e9e7e0;
     position:relative;
     display:flex;
@@ -226,6 +226,14 @@
     text-align:center;
     color:#8a8a8a;
     font-size:0.9rem;
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: #e9e7e0;
+    z-index: 5;
   }
   #empty-state button{
     margin-top:12px;
@@ -377,6 +385,13 @@
             </select>
             <button id="tool-point" data-tool="point"><span class="dot" id="point-preview-dot" style="background:var(--presa-esistente)"></span>Aggiungi punto</button>
           </div>
+          <!-- Controlli Zoom nella toolbar -->
+          <div class="group">
+            <button id="btn-zoom-out" title="Rimpicciolisci">-</button>
+            <span id="zoom-level" style="font-size:0.8rem; min-width:45px; text-align:center;">100%</span>
+            <button id="btn-zoom-in" title="Ingrandisci">+</button>
+            <button id="btn-zoom-reset" title="Ripristina 100%">Reset</button>
+          </div>
           <div class="group">
             <label><input type="checkbox" class="layer-toggle" data-layer="room" checked/> Stanze</label>
             <label><input type="checkbox" class="layer-toggle" data-layer="presa" checked/> Elettrico</label>
@@ -412,30 +427,27 @@
 
 <script>
 /* =========================================================
-   CONFIGURAZIONE SUPABASE
+   CONFIGURAZIONE SUPABASE (Evita ridefinizioni duplicate)
    ========================================================= */
-  SUPABASE_URL = "https://erukzvrtjnvyzjvfuirn.supabase.co";
-  SUPABASE_ANON_KEY = "sb_publishable_FDhQ03affjzeyhCHuoKulg_Rp7PdyLM";
-// Rimuovi 'const' se la variabile è già dichiarata altrove nello scope globale, 
-// oppure usa un controllo di assegnazione:
+const SUPABASE_URL = "https://erukzvrtjnvyzjvfuirn.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_FDhQ03affjzeyhCHuoKulg_Rp7PdyLM";
 window.supabaseClient = window.supabaseClient || window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  supabase = window.supabaseClient;
+const supabase = window.supabaseClient;
 
 /* =========================================================
-   STATO GLOBALE
+   STATO GLOBALE (con supporto Zoom e Pan)
    ========================================================= */
 const state = {
   user: null,
   floors: [],
   activeFloorId: null,
-  activeFloorPlan: null,   // record floor_plans attivo
-  image: null,             // HTMLImageElement caricata
+  activeFloorPlan: null,   
+  image: null,             
   rooms: [],
   points: [],
-  activeTool: null,        // 'room' | 'point' | null
-  drawingRoomPoints: [],   // vertici in corso per una nuova stanza
-  selectedElement: null,   // { type:'room'|'point', id }
-  // --- Nuove variabili per Zoom e Pan ---
+  activeTool: null,        
+  drawingRoomPoints: [],   
+  selectedElement: null,   
   zoom: 1,
   panX: 0,
   panY: 0,
@@ -444,7 +456,7 @@ const state = {
   startY: 0
 };
 
-// Colori dei punti impianto per tipo e stato (esistente/nuovo)
+// Colori dei punti impianto per tipo e stato
 const POINT_COLORS = {
   presa_elettrica: { esistente: '#c9821f', nuova: '#2f8f4e' },
   idrico:          { esistente: '#2196c9', nuova: '#7fd3ff' },
@@ -583,6 +595,11 @@ async function loadActiveFloorPlan() {
   const img = new Image();
   img.onload = async () => {
     state.image = img;
+    state.zoom = 1;
+    state.panX = 0;
+    state.panY = 0;
+    document.getElementById('zoom-level').textContent = '100%';
+
     document.getElementById('empty-state').style.display = 'none';
     const canvas = document.getElementById('plan-canvas');
     canvas.style.display = 'block';
@@ -605,14 +622,12 @@ document.getElementById('upload-input').addEventListener('change', async (e) => 
   const { error: upErr } = await supabase.storage.from('planimetrie').upload(path, file);
   if (upErr) { alert(upErr.message); return; }
 
-  // dimensioni immagine
   const dims = await new Promise((resolve) => {
     const img = new Image();
     img.onload = () => resolve({ w: img.width, h: img.height });
     img.src = URL.createObjectURL(file);
   });
 
-  // disattiva planimetria precedente (se esiste) e crea la nuova
   if (state.activeFloorPlan) {
     await supabase.from('floor_plans').update({ is_active: false }).eq('id', state.activeFloorPlan.id);
   }
@@ -693,15 +708,87 @@ document.querySelectorAll('.layer-toggle').forEach(cb => {
 });
 
 /* =========================================================
-   CANVAS — disegno e interazione
+   GESTIONE ZOOM E PAN
    ========================================================= */
+function applyZoom(newZoom, targetX = canvas.width / 2, targetY = canvas.height / 2) {
+  if (!state.image) return;
+  const prevZoom = state.zoom;
+  state.zoom = Math.max(0.5, Math.min(newZoom, 10.0));
+
+  state.panX = targetX - (targetX - state.panX) * (state.zoom / prevZoom);
+  state.panY = targetY - (targetY - state.panY) * (state.zoom / prevZoom);
+
+  const zoomLevelEl = document.getElementById('zoom-level');
+  if (zoomLevelEl) {
+    zoomLevelEl.textContent = Math.round(state.zoom * 100) + '%';
+  }
+  drawCanvas();
+}
+
+document.getElementById('btn-zoom-in').addEventListener('click', () => {
+  applyZoom(state.zoom * 1.25);
+});
+
+document.getElementById('btn-zoom-out').addEventListener('click', () => {
+  applyZoom(state.zoom / 1.25);
+});
+
+document.getElementById('btn-zoom-reset').addEventListener('click', () => {
+  state.panX = 0;
+  state.panY = 0;
+  applyZoom(1);
+});
+
 const canvas = document.getElementById('plan-canvas');
 const ctx = canvas.getContext('2d');
 
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  if (!state.image) return;
+
+  const zoomIntensity = 0.1;
+  const rect = canvas.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+
+  const newZoom = e.deltaY < 0 ? state.zoom * (1 + zoomIntensity) : state.zoom / (1 + zoomIntensity);
+  applyZoom(newZoom, mouseX, mouseY);
+}, { passive: false });
+
+canvas.addEventListener('mousedown', (e) => {
+  if (state.activeTool === 'room' || state.activeTool === 'point') return;
+  if (e.button === 0) {
+    state.isDragging = true;
+    state.startX = e.clientX - state.panX;
+    state.startY = e.clientY - state.panY;
+  }
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!state.isDragging) return;
+  state.panX = e.clientX - state.startX;
+  state.panY = e.clientY - state.startY;
+  drawCanvas();
+});
+
+window.addEventListener('mouseup', () => {
+  state.isDragging = false;
+});
+
+/* =========================================================
+   CANVAS — disegno
+   ========================================================= */
 function drawCanvas() {
   if (!state.image) return;
   canvas.width = state.image.width;
   canvas.height = state.image.height;
+  
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  ctx.save();
+  ctx.translate(state.panX, state.panY);
+  ctx.scale(state.zoom, state.zoom);
+
   ctx.drawImage(state.image, 0, 0);
 
   const showRooms = document.querySelector('[data-layer="room"]').checked;
@@ -709,7 +796,7 @@ function drawCanvas() {
   const showIdrico = document.querySelector('[data-layer="idrico"]').checked;
   const showGas = document.querySelector('[data-layer="gas"]').checked;
 
-  // stanze
+  // Stanze
   if (showRooms) {
     state.rooms.forEach(room => {
       const pts = room.points || [];
@@ -723,7 +810,7 @@ function drawCanvas() {
       });
       ctx.closePath();
       ctx.strokeStyle = room.color || '#3B82F6';
-      ctx.lineWidth = isSelected ? 3.5 : 2;
+      ctx.lineWidth = (isSelected ? 3.5 : 2) / state.zoom;
       ctx.stroke();
       ctx.fillStyle = (room.color || '#3B82F6') + (isSelected ? '3d' : '22');
       ctx.fill();
@@ -731,13 +818,13 @@ function drawCanvas() {
       const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length * canvas.width;
       const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length * canvas.height;
       ctx.fillStyle = '#1c2321';
-      ctx.font = '14px sans-serif';
+      ctx.font = `${Math.max(10, 14 / state.zoom)}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.fillText(room.name, cx, cy);
     });
   }
 
-  // vertici stanza in corso di disegno
+  // Disegno stanza in corso
   if (state.activeTool === 'room' && state.drawingRoomPoints.length) {
     ctx.beginPath();
     state.drawingRoomPoints.forEach((p, i) => {
@@ -745,12 +832,13 @@ function drawCanvas() {
       i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     });
     ctx.strokeStyle = '#3B82F6';
-    ctx.setLineDash([5, 4]);
+    ctx.setLineDash([5 / state.zoom, 4 / state.zoom]);
+    ctx.lineWidth = 2 / state.zoom;
     ctx.stroke();
     ctx.setLineDash([]);
   }
 
-  // punti impianto
+  // Punti impianto
   state.points.forEach(pt => {
     if (pt.kind === 'presa_elettrica' && !showPrese) return;
     if (pt.kind === 'idrico' && !showIdrico) return;
@@ -763,23 +851,22 @@ function drawCanvas() {
 
     if (isSelected) {
       ctx.beginPath();
-      ctx.arc(x, y, 12, 0, Math.PI * 2);
+      ctx.arc(x, y, 12 / state.zoom, 0, Math.PI * 2);
       ctx.strokeStyle = color;
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([3, 3]);
+      ctx.lineWidth = 1.5 / state.zoom;
+      ctx.setLineDash([3 / state.zoom, 3 / state.zoom]);
       ctx.stroke();
       ctx.setLineDash([]);
     }
 
     ctx.beginPath();
-    ctx.arc(x, y, isSelected ? 8 : 7, 0, Math.PI * 2);
+    ctx.arc(x, y, (isSelected ? 8 : 7) / state.zoom, 0, Math.PI * 2);
     ctx.fillStyle = color;
     ctx.fill();
     ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2 / state.zoom;
     ctx.stroke();
 
-    // linea tratteggiata verso la stanza di appartenenza, se assegnata
     if (pt.room_id) {
       const room = state.rooms.find(r => r.id === pt.room_id);
       if (room && room.points && room.points.length) {
@@ -789,16 +876,18 @@ function drawCanvas() {
         ctx.moveTo(x, y);
         ctx.lineTo(cx, cy);
         ctx.strokeStyle = color + '55';
-        ctx.setLineDash([2, 3]);
-        ctx.lineWidth = 1;
+        ctx.setLineDash([2 / state.zoom, 3 / state.zoom]);
+        ctx.lineWidth = 1 / state.zoom;
         ctx.stroke();
         ctx.setLineDash([]);
       }
     }
   });
+
+  ctx.restore();
 }
 
-/* -- utilità geometriche per l'hit-testing -- */
+/* -- Utilità geometriche -- */
 function pointInPolygon(x, y, pts) {
   let inside = false;
   for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
@@ -811,8 +900,8 @@ function pointInPolygon(x, y, pts) {
   return inside;
 }
 
-function findPointNear(x, y, thresholdPx = 10) {
-  const threshold = thresholdPx / canvas.width;
+function findPointNear(x, y, thresholdPx = 15) {
+  const threshold = (thresholdPx / state.zoom) / canvas.width;
   let closest = null, closestDist = Infinity;
   state.points.forEach(pt => {
     const d = Math.hypot(pt.x - x, pt.y - y);
@@ -826,13 +915,22 @@ function findRoomAt(x, y) {
 }
 
 canvas.addEventListener('click', async (e) => {
-  if (!state.activeFloorPlan) return;
+  if (!state.activeFloorPlan || !state.image) return;
   const rect = canvas.getBoundingClientRect();
-  const x = (e.clientX - rect.left) / rect.width;
-  const y = (e.clientY - rect.top) / rect.height;
+  
+  const clickX = e.clientX - rect.left;
+  const clickY = e.clientY - rect.top;
+
+  const imageCanvasX = (clickX - state.panX) / state.zoom;
+  const imageCanvasY = (clickY - state.panY) / state.zoom;
+
+  const normX = imageCanvasX / canvas.width;
+  const normY = imageCanvasY / canvas.height;
+
+  if (normX < 0 || normX > 1 || normY < 0 || normY > 1) return;
 
   if (state.activeTool === 'room') {
-    state.drawingRoomPoints.push({ x, y });
+    state.drawingRoomPoints.push({ x: normX, y: normY });
     drawCanvas();
     return;
   }
@@ -847,10 +945,12 @@ canvas.addEventListener('click', async (e) => {
         floor_plan_id: state.activeFloorPlan.id,
         user_id: state.user.id,
         kind, status,
-        x, y,
+        x: normX, 
+        y: normY,
       })
       .select()
       .single();
+      
     if (error) { alert(error.message); return; }
 
     state.points.push(data);
@@ -858,33 +958,30 @@ canvas.addEventListener('click', async (e) => {
     drawCanvas();
     selectElement('point', data.id);
 
-	// --- Feedback visivo immediato ---
-    // Mostra temporaneamente un feedback nel pannello dettagli o nella pagina
+    // Feedback visivo immediato di caricamento
     const detailsEmpty = document.getElementById('details-empty');
-    const originalText = detailsEmpty.textContent;
     detailsEmpty.style.display = 'block';
     detailsEmpty.style.color = 'var(--accent)';
     detailsEmpty.textContent = '✓ Punto aggiunto con successo!';
     setTimeout(() => {
       detailsEmpty.style.color = '#9a9a9a';
-      renderDetailsForm(); // Ripristina la visualizzazione corretta dei dettagli del punto
-    }, 1500);	
-	
+      renderDetailsForm();
+    }, 1500);
+
     return;
   }
 
-  // nessuno strumento attivo: prova a selezionare un elemento esistente
-  const pt = findPointNear(x, y);
+  const pt = findPointNear(normX, normY);
   if (pt) { selectElement('point', pt.id); return; }
-  const room = findRoomAt(x, y);
+  const room = findRoomAt(normX, normY);
   if (room) { selectElement('room', room.id); return; }
+  
   state.selectedElement = null;
   renderDetailsForm();
   renderLayerList();
   drawCanvas();
 });
 
-// chiude il poligono stanza in corso (richiamato da doppio click o dal bottone "Fine stanza")
 async function completeRoom() {
   if (state.activeTool !== 'room') return;
   if (state.drawingRoomPoints.length < 3) {
@@ -913,12 +1010,10 @@ async function completeRoom() {
   drawCanvas();
 }
 
-// doppio click per chiudere il poligono stanza in corso
 canvas.addEventListener('dblclick', () => completeRoom());
 
 /* =========================================================
    PANNELLO DETTAGLI + LISTA LAYER
-   (implementazione base — verrà estesa)
    ========================================================= */
 function renderLayerList() {
   const container = document.getElementById('layer-list');
@@ -950,9 +1045,6 @@ function selectElement(type, id) {
   drawCanvas();
 }
 
-/* =========================================================
-   PANNELLO DETTAGLI — form di modifica ed eliminazione
-   ========================================================= */
 function renderDetailsForm() {
   const emptyEl = document.getElementById('details-empty');
   const formEl = document.getElementById('details-form');
@@ -1084,7 +1176,7 @@ function escapeHtml(str) {
 }
 
 /* =========================================================
-   INIZIALIZZAZIONE
+   INIZIALIZZAZIONE SESSIONE
    ========================================================= */
 supabase.auth.getSession().then(({ data: { session } }) => {
   state.user = session ? session.user : null;
