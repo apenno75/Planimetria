@@ -527,7 +527,7 @@ const state = {
   isDragging: false,
   startX: 0,
   startY: 0,
-  mobileTab: 'canvas' // 'floors', 'canvas', 'details'
+  mobileTab: 'floors' // 'floors', 'canvas', 'details'
 };
 
 const POINT_COLORS = {
@@ -1344,6 +1344,10 @@ supabase.auth.getSession().then(({ data: { session } }) => {
     appEl.classList.add('visible');
     document.getElementById('user-email').textContent = state.user.email;
     loadFloors();
+	// Se la schermata è mobile, forza l'apertura sulla scheda Piani
+    if (window.innerWidth <= 768) {
+      setMobileTab('floors');
+    }	
   }
 });
 </script>
