@@ -295,10 +295,32 @@
     align-items:center;
     gap:6px;
     font-size:0.8rem;
-    padding:4px 0;
+    padding:4px 6px;
     cursor:pointer;
+    border-radius:var(--radius);
   }
   .layer-row:hover{ color:var(--accent); }
+  .layer-row.selected{
+    background:var(--accent-soft);
+    color:var(--accent);
+    font-weight:600;
+  }
+  .field-row{
+    display:flex;
+    gap:8px;
+  }
+  .field-row .field{ flex:1; }
+  #details-form .save-btn{
+    width:100%;
+    margin-top:4px;
+    padding:8px;
+    background:var(--accent);
+    color:#fff;
+    border:none;
+    border-radius:var(--radius);
+    cursor:pointer;
+    font-size:0.82rem;
+  }
 </style>
 </head>
 <body>
@@ -635,6 +657,8 @@ function drawCanvas() {
     state.rooms.forEach(room => {
       const pts = room.points || [];
       if (pts.length < 2) return;
+      const isSelected = state.selectedElement &&
+        state.selectedElement.type === 'room' && state.selectedElement.id === room.id;
       ctx.beginPath();
       pts.forEach((p, i) => {
         const x = p.x * canvas.width, y = p.y * canvas.height;
@@ -642,9 +666,9 @@ function drawCanvas() {
       });
       ctx.closePath();
       ctx.strokeStyle = room.color || '#3B82F6';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = isSelected ? 3.5 : 2;
       ctx.stroke();
-      ctx.fillStyle = (room.color || '#3B82F6') + '22';
+      ctx.fillStyle = (room.color || '#3B82F6') + (isSelected ? '3d' : '22');
       ctx.fill();
 
       const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length * canvas.width;
@@ -680,16 +704,73 @@ function drawCanvas() {
     if (pt.kind === 'idrico' && !showIdrico) return;
     if (pt.kind === 'gas' && !showGas) return;
 
+    const isSelected = state.selectedElement &&
+      state.selectedElement.type === 'point' && state.selectedElement.id === pt.id;
     const x = pt.x * canvas.width, y = pt.y * canvas.height;
     const color = (colors[pt.kind] && colors[pt.kind][pt.status]) || '#555';
+
+    if (isSelected) {
+      ctx.beginPath();
+      ctx.arc(x, y, 12, 0, Math.PI * 2);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
     ctx.beginPath();
-    ctx.arc(x, y, 7, 0, Math.PI * 2);
+    ctx.arc(x, y, isSelected ? 8 : 7, 0, Math.PI * 2);
     ctx.fillStyle = color;
     ctx.fill();
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2;
     ctx.stroke();
+
+    // linea tratteggiata verso la stanza di appartenenza, se assegnata
+    if (pt.room_id) {
+      const room = state.rooms.find(r => r.id === pt.room_id);
+      if (room && room.points && room.points.length) {
+        const cx = room.points.reduce((s, p) => s + p.x, 0) / room.points.length * canvas.width;
+        const cy = room.points.reduce((s, p) => s + p.y, 0) / room.points.length * canvas.height;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(cx, cy);
+        ctx.strokeStyle = color + '55';
+        ctx.setLineDash([2, 3]);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
   });
+}
+
+/* -- utilità geometriche per l'hit-testing -- */
+function pointInPolygon(x, y, pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i].x, yi = pts[i].y;
+    const xj = pts[j].x, yj = pts[j].y;
+    const intersect = ((yi > y) !== (yj > y)) &&
+      (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function findPointNear(x, y, thresholdPx = 10) {
+  const threshold = thresholdPx / canvas.width;
+  let closest = null, closestDist = Infinity;
+  state.points.forEach(pt => {
+    const d = Math.hypot(pt.x - x, pt.y - y);
+    if (d < threshold && d < closestDist) { closest = pt; closestDist = d; }
+  });
+  return closest;
+}
+
+function findRoomAt(x, y) {
+  return state.rooms.find(r => r.points && r.points.length >= 3 && pointInPolygon(x, y, r.points)) || null;
 }
 
 canvas.addEventListener('click', async (e) => {
