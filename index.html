@@ -1139,7 +1139,7 @@ function renderDetailsForm() {
       <button class="delete" id="detail-delete">Elimina punto</button>
     `;
 
-    document.getElementById('detail-save').addEventListener('click', async () => {
+document.getElementById('detail-save').addEventListener('click', async () => {
       const status = document.getElementById('detail-point-status').value;
       const label = document.getElementById('detail-point-label').value.trim();
       const room_id = document.getElementById('detail-point-room').value || null;
@@ -1154,6 +1154,16 @@ function renderDetailsForm() {
       point.notes = notes;
       renderLayerList();
       drawCanvas();
+
+      // Feedback visivo di salvataggio riuscito nel pannello
+      const saveBtn = document.getElementById('detail-save');
+      const originalText = saveBtn.textContent;
+      saveBtn.textContent = '✓ Salvato!';
+      saveBtn.style.background = 'var(--presa-nuova)';
+      setTimeout(() => {
+        saveBtn.textContent = originalText;
+        saveBtn.style.background = '';
+      }, 1500);
     });
 
     document.getElementById('detail-delete').addEventListener('click', async () => {
