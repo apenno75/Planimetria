@@ -435,6 +435,13 @@ const state = {
   activeTool: null,        // 'room' | 'point' | null
   drawingRoomPoints: [],   // vertici in corso per una nuova stanza
   selectedElement: null,   // { type:'room'|'point', id }
+  // --- Nuove variabili per Zoom e Pan ---
+  zoom: 1,
+  panX: 0,
+  panY: 0,
+  isDragging: false,
+  startX: 0,
+  startY: 0
 };
 
 // Colori dei punti impianto per tipo e stato (esistente/nuovo)
