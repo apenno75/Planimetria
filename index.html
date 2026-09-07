@@ -2,230 +2,248 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <title>Planimetrie — Gestione impianti</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
-  :root{
-    --ink:#1c2321;
-    --paper:#f6f5f1;
-    --panel:#ffffff;
-    --line:#dcd8cf;
-    --accent:#2f5d50;
-    --accent-soft:#e4ece9;
-    --room:#3b6ea5;
-    --presa-esistente:#c9821f;
-    --presa-nuova:#2f8f4e;
-    --idrico:#2196c9;
-    --gas:#b23a3a;
-    --radius:6px;
-    font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  :root {
+    --ink: #1c2321;
+    --paper: #f6f5f1;
+    --panel: #ffffff;
+    --line: #dcd8cf;
+    --accent: #2f5d50;
+    --accent-soft: #e4ece9;
+    --room: #3b6ea5;
+    --presa-esistente: #c9821f;
+    --presa-nuova: #2f8f4e;
+    --idrico: #2196c9;
+    --gas: #b23a3a;
+    --radius: 8px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
-  *{box-sizing:border-box;}
-  body{
-    margin:0;
-    background:var(--paper);
-    color:var(--ink);
-    height:100vh;
-    display:flex;
-    flex-direction:column;
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: var(--paper);
+    color: var(--ink);
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
   }
 
   /* ---------- Login ---------- */
-  #auth-screen{
-    flex:1;
-    display:flex;
-    align-items:center;
-    justify-content:center;
+  #auth-screen {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
   }
-  #auth-box{
-    background:var(--panel);
-    border:1px solid var(--line);
-    border-radius:var(--radius);
-    padding:32px;
-    width:320px;
+  #auth-box {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 24px;
+    width: 100%;
+    max-width: 340px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
   }
-  #auth-box h1{
-    font-size:1.1rem;
-    margin:0 0 4px;
+  #auth-box h1 { font-size: 1.25rem; margin: 0 0 4px; text-align: center; }
+  #auth-box p.sub { margin: 0 0 20px; color: #6b6b6b; font-size: 0.85rem; text-align: center; }
+  #auth-box input {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    font-size: 0.95rem;
   }
-  #auth-box p.sub{
-    margin:0 0 20px;
-    color:#6b6b6b;
-    font-size:0.85rem;
+  #auth-box button {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: var(--radius);
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 4px;
   }
-  #auth-box input{
-    width:100%;
-    padding:9px 10px;
-    margin-bottom:10px;
-    border:1px solid var(--line);
-    border-radius:var(--radius);
-    font-size:0.9rem;
+  #auth-box button.secondary {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    margin-top: 8px;
   }
-  #auth-box button{
-    width:100%;
-    padding:10px;
-    border:none;
-    border-radius:var(--radius);
-    background:var(--accent);
-    color:#fff;
-    font-size:0.9rem;
-    cursor:pointer;
-    margin-top:4px;
-  }
-  #auth-box button.secondary{
-    background:transparent;
-    color:var(--accent);
-    border:1px solid var(--accent);
-    margin-top:8px;
-  }
-  #auth-msg{
-    font-size:0.8rem;
-    margin-top:10px;
-    color:#a33;
-    min-height:1em;
+  #auth-msg {
+    font-size: 0.85rem;
+    margin-top: 12px;
+    color: #a33;
+    text-align: center;
+    min-height: 1.2em;
   }
 
   /* ---------- App layout ---------- */
-  #app{
-    display:none;
-    flex:1;
-    min-height:0;
+  #app {
+    display: none;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
   }
-  #app.visible{ display:flex; }
+  #app.visible { display: flex; }
 
-  header{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    padding:10px 18px;
-    border-bottom:1px solid var(--line);
-    background:var(--panel);
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+    z-index: 10;
   }
-  header h1{ font-size:1rem; margin:0; }
-  header button{
-    background:none;
-    border:1px solid var(--line);
-    border-radius:var(--radius);
-    padding:6px 12px;
-    cursor:pointer;
-    font-size:0.8rem;
-  }
-
-  #main{
-    display:flex;
-    flex:1;
-    min-height:0;
+  header h1 { font-size: 1rem; margin: 0; font-weight: 600; }
+  header button {
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 0.8rem;
   }
 
-  /* ---------- Sidebar: piani ---------- */
-  #sidebar{
-    width:230px;
-    border-right:1px solid var(--line);
-    background:var(--panel);
-    padding:14px;
-    overflow-y:auto;
-  }
-  #sidebar h2{
-    font-size:0.75rem;
-    text-transform:uppercase;
-    letter-spacing:0.04em;
-    color:#7a7a7a;
-    margin:0 0 10px;
-  }
-  .floor-item{
-    padding:8px 10px;
-    border-radius:var(--radius);
-    cursor:pointer;
-    font-size:0.88rem;
-    margin-bottom:4px;
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-  }
-  .floor-item:hover{ background:var(--accent-soft); }
-  .floor-item.active{ background:var(--accent); color:#fff; }
-  #add-floor-btn{
-    width:100%;
-    margin-top:10px;
-    padding:8px;
-    border:1px dashed var(--line);
-    background:none;
-    border-radius:var(--radius);
-    cursor:pointer;
-    font-size:0.82rem;
-    color:var(--accent);
+  #main {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
   }
 
-  /* ---------- Canvas area ---------- */
-  #canvas-area{
-    flex:1;
-    display:flex;
-    flex-direction:column;
-    min-width:0;
+  /* ---------- Sidebar / Pannelli ---------- */
+  #sidebar {
+    width: 230px;
+    border-right: 1px solid var(--line);
+    background: var(--panel);
+    padding: 14px;
+    overflow-y: auto;
   }
-  #toolbar{
-    display:flex;
-    align-items:center;
-    gap:10px;
-    padding:10px 16px;
-    border-bottom:1px solid var(--line);
-    background:var(--panel);
-    flex-wrap:wrap;
+  #sidebar h2, #details h2 {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #7a7a7a;
+    margin: 0 0 10px;
   }
-  #toolbar .group{
-    display:flex;
-    gap:6px;
-    align-items:center;
-    padding-right:10px;
-    border-right:1px solid var(--line);
+  .floor-item {
+    padding: 10px 12px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 0.9rem;
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid transparent;
   }
-  #toolbar .group:last-child{ border-right:none; }
-  #toolbar button{
-    border:1px solid var(--line);
-    background:#fff;
-    padding:6px 10px;
-    border-radius:var(--radius);
-    font-size:0.8rem;
-    cursor:pointer;
-    display:flex;
-    align-items:center;
-    gap:6px;
-  }
-  #toolbar button.active{
-    background:var(--accent);
-    color:#fff;
-    border-color:var(--accent);
-  }
-  .dot{
-    width:9px;height:9px;border-radius:50%;display:inline-block;
-  }
-  #toolbar label{
-    font-size:0.78rem;
-    display:flex;
-    align-items:center;
-    gap:4px;
-    cursor:pointer;
+  .floor-item:hover { background: var(--accent-soft); }
+  .floor-item.active { background: var(--accent); color: #fff; font-weight: 500; }
+  #add-floor-btn {
+    width: 100%;
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px dashed var(--accent);
+    background: none;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--accent);
+    font-weight: 600;
   }
 
-  #canvas-wrap{
-    flex:1;
-    overflow:hidden;
-    background:#e9e7e0;
-    position:relative;
-    display:flex;
-    align-items:flex-start;
-    justify-content:flex-start;
+  /* ---------- Canvas Area ---------- */
+  #canvas-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    height: 100%;
+    position: relative;
   }
-  #plan-canvas{
-    background:#fff;
-    cursor:crosshair;
+  #toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
   }
-  #empty-state{
-    margin:auto;
-    text-align:center;
-    color:#8a8a8a;
-    font-size:0.9rem;
+  #toolbar::-webkit-scrollbar { display: none; }
+  #toolbar .group {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    padding-right: 8px;
+    border-right: 1px solid var(--line);
+    flex-shrink: 0;
+  }
+  #toolbar .group:last-child { border-right: none; }
+  #toolbar button, #toolbar select {
+    border: 1px solid var(--line);
+    background: #fff;
+    padding: 8px 10px;
+    border-radius: var(--radius);
+    font-size: 0.82rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+  }
+  #toolbar button.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  #toolbar label {
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  #canvas-wrap {
+    flex: 1;
+    overflow: hidden;
+    background: #e9e7e0;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #plan-canvas {
+    background: #fff;
+    cursor: crosshair;
+    touch-action: none;
+  }
+  #empty-state {
+    text-align: center;
+    color: #8a8a8a;
+    font-size: 0.9rem;
     position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
     display: flex;
@@ -234,100 +252,140 @@
     align-items: center;
     background: #e9e7e0;
     z-index: 5;
+    padding: 20px;
   }
-  #empty-state button{
-    margin-top:12px;
-    padding:9px 16px;
-    background:var(--accent);
-    color:#fff;
-    border:none;
-    border-radius:var(--radius);
-    cursor:pointer;
+  #empty-state button {
+    margin-top: 12px;
+    padding: 10px 18px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-weight: 500;
   }
-  #upload-input{ display:none; }
+  #upload-input { display: none; }
 
-  /* ---------- Pannello destro: dettagli elemento ---------- */
-  #details{
-    width:260px;
-    border-left:1px solid var(--line);
-    background:var(--panel);
-    padding:14px;
-    overflow-y:auto;
+  /* ---------- Pannello Destro / Dettagli ---------- */
+  #details {
+    width: 280px;
+    border-left: 1px solid var(--line);
+    background: var(--panel);
+    padding: 14px;
+    overflow-y: auto;
   }
-  #details h2{
-    font-size:0.75rem;
-    text-transform:uppercase;
-    letter-spacing:0.04em;
-    color:#7a7a7a;
-    margin:0 0 10px;
+  #details-empty { font-size: 0.85rem; color: #9a9a9a; }
+  .field { margin-bottom: 12px; }
+  .field label {
+    display: block;
+    font-size: 0.78rem;
+    color: #6b6b6b;
+    margin-bottom: 4px;
   }
-  #details-empty{
-    font-size:0.82rem;
-    color:#9a9a9a;
+  .field input, .field select, .field textarea {
+    width: 100%;
+    padding: 9px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    font-size: 0.9rem;
   }
-  .field{ margin-bottom:10px; }
-  .field label{
-    display:block;
-    font-size:0.75rem;
-    color:#6b6b6b;
-    margin-bottom:3px;
-  }
-  .field input, .field select, .field textarea{
-    width:100%;
-    padding:7px 8px;
-    border:1px solid var(--line);
-    border-radius:var(--radius);
-    font-size:0.85rem;
-  }
-  .field textarea{ resize:vertical; min-height:50px; }
-  #details button.delete{
-    width:100%;
-    margin-top:6px;
-    padding:8px;
-    background:#fff;
-    border:1px solid #c66;
-    color:#c66;
-    border-radius:var(--radius);
-    cursor:pointer;
-    font-size:0.82rem;
+  .field textarea { resize: vertical; min-height: 60px; }
+  #details button.delete {
+    width: 100%;
+    margin-top: 8px;
+    padding: 10px;
+    background: #fff;
+    border: 1px solid #c66;
+    color: #c66;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
   }
 
-  /* lista punti/stanze del piano corrente */
-  #layer-list{
-    margin-top:18px;
-    border-top:1px solid var(--line);
-    padding-top:12px;
+  #layer-list {
+    margin-top: 18px;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
   }
-  .layer-row{
-    display:flex;
-    align-items:center;
-    gap:6px;
-    font-size:0.8rem;
-    padding:4px 6px;
-    cursor:pointer;
-    border-radius:var(--radius);
+  .layer-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    padding: 8px;
+    cursor: pointer;
+    border-radius: var(--radius);
   }
-  .layer-row:hover{ color:var(--accent); }
-  .layer-row.selected{
-    background:var(--accent-soft);
-    color:var(--accent);
-    font-weight:600;
+  .layer-row:hover { color: var(--accent); }
+  .layer-row.selected {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
   }
-  .field-row{
-    display:flex;
-    gap:8px;
+  #details-form .save-btn {
+    width: 100%;
+    margin-top: 6px;
+    padding: 10px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 0.88rem;
+    font-weight: 600;
+    transition: background 0.2s;
   }
-  .field-row .field{ flex:1; }
-  #details-form .save-btn{
-    width:100%;
-    margin-top:4px;
-    padding:8px;
-    background:var(--accent);
-    color:#fff;
-    border:none;
-    border-radius:var(--radius);
-    cursor:pointer;
-    font-size:0.82rem;
+
+  /* ---------- Navigation Bar Mobile (Tab Bar) ---------- */
+  #mobile-nav {
+    display: none;
+    background: var(--panel);
+    border-top: 1px solid var(--line);
+    height: 56px;
+    z-index: 20;
+  }
+  #mobile-nav button {
+    flex: 1;
+    border: none;
+    background: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    font-size: 0.72rem;
+    color: #6b6b6b;
+    padding: 0;
+    cursor: pointer;
+  }
+  #mobile-nav button.active {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  #mobile-nav button svg { width: 20px; height: 20px; fill: currentColor; }
+
+  /* ---------- MEDIA QUERIES (Mobile View) ---------- */
+  @media (max-width: 768px) {
+    #mobile-nav { display: flex; }
+    
+    #sidebar, #details {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 15;
+      display: none;
+    }
+
+    #sidebar.mobile-visible,
+    #details.mobile-visible {
+      display: block;
+    }
+
+    #canvas-area.mobile-hidden {
+      display: none;
+    }
   }
 </style>
 </head>
@@ -352,7 +410,7 @@
     <header>
       <h1>Planimetrie casa</h1>
       <div>
-        <span id="user-email" style="font-size:0.8rem; color:#7a7a7a; margin-right:12px;"></span>
+        <span id="user-email" style="font-size:0.8rem; color:#7a7a7a; margin-right:8px;"></span>
         <button id="btn-logout">Esci</button>
       </div>
     </header>
@@ -369,9 +427,9 @@
       <section id="canvas-area">
         <div id="toolbar">
           <div class="group">
-            <button id="tool-room" data-tool="room"><span class="dot" style="background:var(--room)"></span>Disegna stanza</button>
-            <button id="btn-finish-room" style="display:none;">Fine stanza</button>
-            <button id="btn-undo-vertex" style="display:none;">Annulla punto</button>
+            <button id="tool-room" data-tool="room"><span class="dot" style="background:var(--room)"></span>Stanza</button>
+            <button id="btn-finish-room" style="display:none;">Fine</button>
+            <button id="btn-undo-vertex" style="display:none;">Annulla</button>
           </div>
           <div class="group">
             <select id="point-kind">
@@ -383,23 +441,22 @@
               <option value="esistente">Esistente</option>
               <option value="nuova">Nuovo</option>
             </select>
-            <button id="tool-point" data-tool="point"><span class="dot" id="point-preview-dot" style="background:var(--presa-esistente)"></span>Aggiungi punto</button>
+            <button id="tool-point" data-tool="point"><span class="dot" id="point-preview-dot" style="background:var(--presa-esistente)"></span>Punto</button>
           </div>
-          <!-- Controlli Zoom nella toolbar -->
           <div class="group">
             <button id="btn-zoom-out" title="Rimpicciolisci">-</button>
-            <span id="zoom-level" style="font-size:0.8rem; min-width:45px; text-align:center;">100%</span>
+            <span id="zoom-level" style="font-size:0.8rem; min-width:38px; text-align:center;">100%</span>
             <button id="btn-zoom-in" title="Ingrandisci">+</button>
             <button id="btn-zoom-reset" title="Ripristina 100%">Reset</button>
           </div>
           <div class="group">
             <label><input type="checkbox" class="layer-toggle" data-layer="room" checked/> Stanze</label>
-            <label><input type="checkbox" class="layer-toggle" data-layer="presa" checked/> Elettrico</label>
-            <label><input type="checkbox" class="layer-toggle" data-layer="idrico" checked/> Idrico</label>
+            <label><input type="checkbox" class="layer-toggle" data-layer="presa" checked/> El.</label>
+            <label><input type="checkbox" class="layer-toggle" data-layer="idrico" checked/> Idr.</label>
             <label><input type="checkbox" class="layer-toggle" data-layer="gas" checked/> Gas</label>
           </div>
           <div class="group">
-            <button id="btn-upload">Carica planimetria</button>
+            <button id="btn-upload">Carica foto</button>
             <input type="file" id="upload-input" accept="image/*" capture="environment" />
           </div>
         </div>
@@ -422,12 +479,28 @@
         <div id="layer-list"></div>
       </aside>
     </div>
+
+    <!-- Barra di navigazione Mobile Bottom -->
+    <nav id="mobile-nav">
+      <button id="nav-tab-floors">
+        <svg viewBox="0 0 24 24"><path d="M12 3L2 12h3v8h6v-6h2v6h6v-8h3L12 3z"/></svg>
+        Piani
+      </button>
+      <button id="nav-tab-canvas" class="active">
+        <svg viewBox="0 0 24 24"><path d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9A1 1 0 0 0 2.7 6.1L3 6.25V21l5.5-2.1 6 2.1 5.64-1.9a1 1 0 0 0 .66-1.2L21 17.75V3.5a.5.5 0 0 0-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/></svg>
+        Mappa
+      </button>
+      <button id="nav-tab-details">
+        <svg viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+        Dettagli
+      </button>
+    </nav>
   </div>
 </div>
 
 <script>
 /* =========================================================
-   CONFIGURAZIONE SUPABASE (Evita ridefinizioni duplicate)
+   CONFIGURAZIONE SUPABASE
    ========================================================= */
   SUPABASE_URL = "https://erukzvrtjnvyzjvfuirn.supabase.co";
   SUPABASE_ANON_KEY = "sb_publishable_FDhQ03affjzeyhCHuoKulg_Rp7PdyLM";
@@ -435,7 +508,7 @@ window.supabaseClient = window.supabaseClient || window.supabase.createClient(SU
   supabase = window.supabaseClient;
 
 /* =========================================================
-   STATO GLOBALE (con supporto Zoom e Pan)
+   STATO GLOBALE
    ========================================================= */
 const state = {
   user: null,
@@ -453,10 +526,10 @@ const state = {
   panY: 0,
   isDragging: false,
   startX: 0,
-  startY: 0
+  startY: 0,
+  mobileTab: 'canvas' // 'floors', 'canvas', 'details'
 };
 
-// Colori dei punti impianto per tipo e stato
 const POINT_COLORS = {
   presa_elettrica: { esistente: '#c9821f', nuova: '#2f8f4e' },
   idrico:          { esistente: '#2196c9', nuova: '#7fd3ff' },
@@ -473,6 +546,39 @@ function updatePointPreviewDot() {
 document.getElementById('point-kind').addEventListener('change', updatePointPreviewDot);
 document.getElementById('point-status').addEventListener('change', updatePointPreviewDot);
 updatePointPreviewDot();
+
+/* =========================================================
+   GESTIONE MOBILE TAB BAR
+   ========================================================= */
+function setMobileTab(tab) {
+  state.mobileTab = tab;
+  const sidebar = document.getElementById('sidebar');
+  const canvasArea = document.getElementById('canvas-area');
+  const details = document.getElementById('details');
+
+  document.querySelectorAll('#mobile-nav button').forEach(b => b.classList.remove('active'));
+
+  sidebar.classList.remove('mobile-visible');
+  details.classList.remove('mobile-visible');
+  canvasArea.classList.remove('mobile-hidden');
+
+  if (tab === 'floors') {
+    sidebar.classList.add('mobile-visible');
+    canvasArea.classList.add('mobile-hidden');
+    document.getElementById('nav-tab-floors').classList.add('active');
+  } else if (tab === 'details') {
+    details.classList.add('mobile-visible');
+    canvasArea.classList.add('mobile-hidden');
+    document.getElementById('nav-tab-details').classList.add('active');
+  } else {
+    document.getElementById('nav-tab-canvas').classList.add('active');
+    setTimeout(drawCanvas, 50);
+  }
+}
+
+document.getElementById('nav-tab-floors').addEventListener('click', () => setMobileTab('floors'));
+document.getElementById('nav-tab-canvas').addEventListener('click', () => setMobileTab('canvas'));
+document.getElementById('nav-tab-details').addEventListener('click', () => setMobileTab('details'));
 
 /* =========================================================
    AUTENTICAZIONE
@@ -535,7 +641,10 @@ function renderFloorList() {
     const div = document.createElement('div');
     div.className = 'floor-item' + (floor.id === state.activeFloorId ? ' active' : '');
     div.textContent = floor.name;
-    div.addEventListener('click', () => selectFloor(floor.id));
+    div.addEventListener('click', () => {
+      selectFloor(floor.id);
+      if (window.innerWidth <= 768) setMobileTab('canvas');
+    });
     list.appendChild(div);
   });
 }
@@ -552,6 +661,7 @@ async function addFloor() {
   state.floors.push(data);
   renderFloorList();
   selectFloor(data.id);
+  if (window.innerWidth <= 768) setMobileTab('canvas');
 }
 document.getElementById('add-floor-btn').addEventListener('click', addFloor);
 document.getElementById('empty-add-floor').addEventListener('click', addFloor);
@@ -708,7 +818,7 @@ document.querySelectorAll('.layer-toggle').forEach(cb => {
 });
 
 /* =========================================================
-   GESTIONE ZOOM E PAN
+   GESTIONE ZOOM E PAN (Supporto Touch Mobile)
    ========================================================= */
 function applyZoom(newZoom, targetX = canvas.width / 2, targetY = canvas.height / 2) {
   if (!state.image) return;
@@ -725,18 +835,10 @@ function applyZoom(newZoom, targetX = canvas.width / 2, targetY = canvas.height 
   drawCanvas();
 }
 
-document.getElementById('btn-zoom-in').addEventListener('click', () => {
-  applyZoom(state.zoom * 1.25);
-});
-
-document.getElementById('btn-zoom-out').addEventListener('click', () => {
-  applyZoom(state.zoom / 1.25);
-});
-
+document.getElementById('btn-zoom-in').addEventListener('click', () => applyZoom(state.zoom * 1.25));
+document.getElementById('btn-zoom-out').addEventListener('click', () => applyZoom(state.zoom / 1.25));
 document.getElementById('btn-zoom-reset').addEventListener('click', () => {
-  state.panX = 0;
-  state.panY = 0;
-  applyZoom(1);
+  state.panX = 0; state.panY = 0; applyZoom(1);
 });
 
 const canvas = document.getElementById('plan-canvas');
@@ -745,15 +847,52 @@ const ctx = canvas.getContext('2d');
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   if (!state.image) return;
-
   const zoomIntensity = 0.1;
   const rect = canvas.getBoundingClientRect();
   const mouseX = e.clientX - rect.left;
   const mouseY = e.clientY - rect.top;
-
   const newZoom = e.deltaY < 0 ? state.zoom * (1 + zoomIntensity) : state.zoom / (1 + zoomIntensity);
   applyZoom(newZoom, mouseX, mouseY);
 }, { passive: false });
+
+/* Interazioni Mouse & Touch per Drag/Pan */
+let initialPinchDistance = null;
+
+canvas.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 1) {
+    if (state.activeTool === 'room' || state.activeTool === 'point') return;
+    state.isDragging = true;
+    state.startX = e.touches[0].clientX - state.panX;
+    state.startY = e.touches[0].clientY - state.panY;
+  } else if (e.touches.length === 2) {
+    state.isDragging = false;
+    initialPinchDistance = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+  }
+}, { passive: true });
+
+canvas.addEventListener('touchmove', (e) => {
+  if (e.touches.length === 1 && state.isDragging) {
+    state.panX = e.touches[0].clientX - state.startX;
+    state.panY = e.touches[0].clientY - state.startY;
+    drawCanvas();
+  } else if (e.touches.length === 2 && initialPinchDistance) {
+    const currentDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    const zoomFactor = currentDist / initialPinchDistance;
+    applyZoom(state.zoom * zoomFactor);
+    initialPinchDistance = currentDist;
+  }
+}, { passive: true });
+
+canvas.addEventListener('touchend', () => {
+  state.isDragging = false;
+  initialPinchDistance = null;
+});
 
 canvas.addEventListener('mousedown', (e) => {
   if (state.activeTool === 'room' || state.activeTool === 'point') return;
@@ -796,7 +935,6 @@ function drawCanvas() {
   const showIdrico = document.querySelector('[data-layer="idrico"]').checked;
   const showGas = document.querySelector('[data-layer="gas"]').checked;
 
-  // Stanze
   if (showRooms) {
     state.rooms.forEach(room => {
       const pts = room.points || [];
@@ -824,7 +962,6 @@ function drawCanvas() {
     });
   }
 
-  // Disegno stanza in corso
   if (state.activeTool === 'room' && state.drawingRoomPoints.length) {
     ctx.beginPath();
     state.drawingRoomPoints.forEach((p, i) => {
@@ -838,7 +975,6 @@ function drawCanvas() {
     ctx.setLineDash([]);
   }
 
-  // Punti impianto
   state.points.forEach(pt => {
     if (pt.kind === 'presa_elettrica' && !showPrese) return;
     if (pt.kind === 'idrico' && !showIdrico) return;
@@ -900,7 +1036,7 @@ function pointInPolygon(x, y, pts) {
   return inside;
 }
 
-function findPointNear(x, y, thresholdPx = 15) {
+function findPointNear(x, y, thresholdPx = 20) {
   const threshold = (thresholdPx / state.zoom) / canvas.width;
   let closest = null, closestDist = Infinity;
   state.points.forEach(pt => {
@@ -958,7 +1094,6 @@ canvas.addEventListener('click', async (e) => {
     drawCanvas();
     selectElement('point', data.id);
 
-    // Feedback visivo immediato di caricamento
     const detailsEmpty = document.getElementById('details-empty');
     detailsEmpty.style.display = 'block';
     detailsEmpty.style.color = 'var(--accent)';
@@ -966,7 +1101,7 @@ canvas.addEventListener('click', async (e) => {
     setTimeout(() => {
       detailsEmpty.style.color = '#9a9a9a';
       renderDetailsForm();
-    }, 1500);
+    }, 1200);
 
     return;
   }
@@ -1024,7 +1159,10 @@ function renderLayerList() {
     const row = document.createElement('div');
     row.className = 'layer-row' + (sel && sel.type === 'room' && sel.id === r.id ? ' selected' : '');
     row.textContent = '▢ ' + r.name;
-    row.addEventListener('click', () => selectElement('room', r.id));
+    row.addEventListener('click', () => {
+      selectElement('room', r.id);
+      if (window.innerWidth <= 768) setMobileTab('details');
+    });
     container.appendChild(row);
   });
 
@@ -1033,7 +1171,10 @@ function renderLayerList() {
     const row = document.createElement('div');
     row.className = 'layer-row' + (sel && sel.type === 'point' && sel.id === p.id ? ' selected' : '');
     row.textContent = '● ' + (p.label || KIND_LABELS[p.kind] || p.kind) + ' (' + (statusLabel[p.status] || p.status) + ')';
-    row.addEventListener('click', () => selectElement('point', p.id));
+    row.addEventListener('click', () => {
+      selectElement('point', p.id);
+      if (window.innerWidth <= 768) setMobileTab('details');
+    });
     container.appendChild(row);
   });
 }
@@ -1071,7 +1212,7 @@ function renderDetailsForm() {
       </div>
       <div class="field">
         <label>Colore</label>
-        <input type="color" id="detail-room-color" value="${room.color || '#3b82f6'}" />
+        <input type="color" id="detail-room-color" value="${room.color || '#3b82f6'}" style="height:40px; padding:2px;" />
       </div>
       <button class="save-btn" id="detail-save">Salva</button>
       <button class="delete" id="detail-delete">Elimina stanza</button>
@@ -1087,6 +1228,15 @@ function renderDetailsForm() {
       room.color = color;
       renderLayerList();
       drawCanvas();
+
+      const saveBtn = document.getElementById('detail-save');
+      const originalText = saveBtn.textContent;
+      saveBtn.textContent = '✓ Salvato!';
+      saveBtn.style.background = 'var(--presa-nuova)';
+      setTimeout(() => {
+        saveBtn.textContent = originalText;
+        saveBtn.style.background = '';
+      }, 1500);
     });
 
     document.getElementById('detail-delete').addEventListener('click', async () => {
@@ -1139,7 +1289,7 @@ function renderDetailsForm() {
       <button class="delete" id="detail-delete">Elimina punto</button>
     `;
 
-document.getElementById('detail-save').addEventListener('click', async () => {
+    document.getElementById('detail-save').addEventListener('click', async () => {
       const status = document.getElementById('detail-point-status').value;
       const label = document.getElementById('detail-point-label').value.trim();
       const room_id = document.getElementById('detail-point-room').value || null;
@@ -1155,7 +1305,6 @@ document.getElementById('detail-save').addEventListener('click', async () => {
       renderLayerList();
       drawCanvas();
 
-      // Feedback visivo di salvataggio riuscito nel pannello
       const saveBtn = document.getElementById('detail-save');
       const originalText = saveBtn.textContent;
       saveBtn.textContent = '✓ Salvato!';
