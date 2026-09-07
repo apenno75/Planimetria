@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Planimetrie — Gestione impianti</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --ink:#1c2321;
+    --paper:#f6f5f1;
+    --panel:#ffffff;
+    --line:#dcd8cf;
+    --accent:#2f5d50;
+    --accent-soft:#e4ece9;
+    --room:#3b6ea5;
+    --presa-esistente:#c9821f;
+    --presa-nuova:#2f8f4e;
+    --idrico:#2196c9;
+    --gas:#b23a3a;
+    --radius:6px;
+    font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    height:100vh;
+    display:flex;
+    flex-direction:column;
+  }
+
+  /* ---------- Login ---------- */
+  #auth-screen{
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  #auth-box{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:32px;
+    width:320px;
+  }
+  #auth-box h1{
+    font-size:1.1rem;
+    margin:0 0 4px;
+  }
+  #auth-box p.sub{
+    margin:0 0 20px;
+    color:#6b6b6b;
+    font-size:0.85rem;
+  }
+  #auth-box input{
+    width:100%;
+    padding:9px 10px;
+    margin-bottom:10px;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    font-size:0.9rem;
+  }
+  #auth-box button{
+    width:100%;
+    padding:10px;
+    border:none;
+    border-radius:var(--radius);
+    background:var(--accent);
+    color:#fff;
+    font-size:0.9rem;
+    cursor:pointer;
+    margin-top:4px;
+  }
+  #auth-box button.secondary{
+    background:transparent;
+    color:var(--accent);
+    border:1px solid var(--accent);
+    margin-top:8px;
+  }
+  #auth-msg{
+    font-size:0.8rem;
+    margin-top:10px;
+    color:#a33;
+    min-height:1em;
+  }
+
+  /* ---------- App layout ---------- */
+  #app{
+    display:none;
+    flex:1;
+    min-height:0;
+  }
+  #app.visible{ display:flex; }
+
+  header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:10px 18px;
+    border-bottom:1px solid var(--line);
+    background:var(--panel);
+  }
+  header h1{ font-size:1rem; margin:0; }
+  header button{
+    background:none;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:6px 12px;
+    cursor:pointer;
+    font-size:0.8rem;
+  }
+
+  #main{
+    display:flex;
+    flex:1;
+    min-height:0;
+  }
+
+  /* ---------- Sidebar: piani ---------- */
+  #sidebar{
+    width:230px;
+    border-right:1px solid var(--line);
+    background:var(--panel);
+    padding:14px;
+    overflow-y:auto;
+  }
+  #sidebar h2{
+    font-size:0.75rem;
+    text-transform:uppercase;
+    letter-spacing:0.04em;
+    color:#7a7a7a;
+    margin:0 0 10px;
+  }
+  .floor-item{
+    padding:8px 10px;
+    border-radius:var(--radius);
+    cursor:pointer;
+    font-size:0.88rem;
+    margin-bottom:4px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  .floor-item:hover{ background:var(--accent-soft); }
+  .floor-item.active{ background:var(--accent); color:#fff; }
+  #add-floor-btn{
+    width:100%;
+    margin-top:10px;
+    padding:8px;
+    border:1px dashed var(--line);
+    background:none;
+    border-radius:var(--radius);
+    cursor:pointer;
+    font-size:0.82rem;
+    color:var(--accent);
+  }
+
+  /* ---------- Canvas area ---------- */
+  #canvas-area{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    min-width:0;
+  }
+  #toolbar{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:10px 16px;
+    border-bottom:1px solid var(--line);
+    background:var(--panel);
+    flex-wrap:wrap;
+  }
+  #toolbar .group{
+    display:flex;
+    gap:6px;
+    align-items:center;
+    padding-right:10px;
+    border-right:1px solid var(--line);
+  }
+  #toolbar .group:last-child{ border-right:none; }
+  #toolbar button{
+    border:1px solid var(--line);
+    background:#fff;
+    padding:6px 10px;
+    border-radius:var(--radius);
+    font-size:0.8rem;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  #toolbar button.active{
+    background:var(--accent);
+    color:#fff;
+    border-color:var(--accent);
+  }
+  .dot{
+    width:9px;height:9px;border-radius:50%;display:inline-block;
+  }
+  #toolbar label{
+    font-size:0.78rem;
+    display:flex;
+    align-items:center;
+    gap:4px;
+    cursor:pointer;
+  }
+
+  #canvas-wrap{
+    flex:1;
+    overflow:auto;
+    background:#e9e7e0;
+    position:relative;
+    display:flex;
+    align-items:flex-start;
+    justify-content:flex-start;
+  }
+  #plan-canvas{
+    background:#fff;
+    cursor:crosshair;
+  }
+  #empty-state{
+    margin:auto;
+    text-align:center;
+    color:#8a8a8a;
+    font-size:0.9rem;
+  }
+  #empty-state button{
+    margin-top:12px;
+    padding:9px 16px;
+    background:var(--accent);
+    color:#fff;
+    border:none;
+    border-radius:var(--radius);
+    cursor:pointer;
+  }
+  #upload-input{ display:none; }
+
+  /* ---------- Pannello destro: dettagli elemento ---------- */
+  #details{
+    width:260px;
+    border-left:1px solid var(--line);
+    background:var(--panel);
+    padding:14px;
+    overflow-y:auto;
+  }
+  #details h2{
+    font-size:0.75rem;
+    text-transform:uppercase;
+    letter-spacing:0.04em;
+    color:#7a7a7a;
+    margin:0 0 10px;
+  }
+  #details-empty{
+    font-size:0.82rem;
+    color:#9a9a9a;
+  }
+  .field{ margin-bottom:10px; }
+  .field label{
+    display:block;
+    font-size:0.75rem;
+    color:#6b6b6b;
+    margin-bottom:3px;
+  }
+  .field input, .field select, .field textarea{
+    width:100%;
+    padding:7px 8px;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    font-size:0.85rem;
+  }
+  .field textarea{ resize:vertical; min-height:50px; }
+  #details button.delete{
+    width:100%;
+    margin-top:6px;
+    padding:8px;
+    background:#fff;
+    border:1px solid #c66;
+    color:#c66;
+    border-radius:var(--radius);
+    cursor:pointer;
+    font-size:0.82rem;
+  }
+
+  /* lista punti/stanze del piano corrente */
+  #layer-list{
+    margin-top:18px;
+    border-top:1px solid var(--line);
+    padding-top:12px;
+  }
+  .layer-row{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    font-size:0.8rem;
+    padding:4px 0;
+    cursor:pointer;
+  }
+  .layer-row:hover{ color:var(--accent); }
+</style>
+</head>
+<body>
+
+<!-- ============ SCHERMATA LOGIN ============ -->
+<div id="auth-screen">
+  <div id="auth-box">
+    <h1>Planimetrie casa</h1>
+    <p class="sub">Accedi per gestire stanze e impianti</p>
+    <input type="email" id="auth-email" placeholder="Email" autocomplete="username" />
+    <input type="password" id="auth-password" placeholder="Password" autocomplete="current-password" />
+    <button id="btn-login">Accedi</button>
+    <button id="btn-signup" class="secondary">Crea account</button>
+    <div id="auth-msg"></div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app">
+  <div id="main-wrap" style="display:flex; flex-direction:column; flex:1; min-height:0;">
+    <header>
+      <h1>Planimetrie casa</h1>
+      <div>
+        <span id="user-email" style="font-size:0.8rem; color:#7a7a7a; margin-right:12px;"></span>
+        <button id="btn-logout">Esci</button>
+      </div>
+    </header>
+
+    <div id="main">
+      <!-- Sidebar piani -->
+      <aside id="sidebar">
+        <h2>Piani</h2>
+        <div id="floor-list"></div>
+        <button id="add-floor-btn">+ Aggiungi piano</button>
+      </aside>
+
+      <!-- Area planimetria -->
+      <section id="canvas-area">
+        <div id="toolbar">
+          <div class="group">
+            <button id="tool-room" data-tool="room"><span class="dot" style="background:var(--room)"></span>Stanze</button>
+            <button id="tool-presa-esistente" data-tool="presa_esistente"><span class="dot" style="background:var(--presa-esistente)"></span>Presa esistente</button>
+            <button id="tool-presa-nuova" data-tool="presa_nuova"><span class="dot" style="background:var(--presa-nuova)"></span>Presa nuova</button>
+            <button id="tool-idrico" data-tool="idrico"><span class="dot" style="background:var(--idrico)"></span>Idrico</button>
+            <button id="tool-gas" data-tool="gas"><span class="dot" style="background:var(--gas)"></span>Gas</button>
+          </div>
+          <div class="group">
+            <label><input type="checkbox" class="layer-toggle" data-layer="room" checked/> Stanze</label>
+            <label><input type="checkbox" class="layer-toggle" data-layer="presa" checked/> Prese</label>
+            <label><input type="checkbox" class="layer-toggle" data-layer="idrico" checked/> Idrico</label>
+            <label><input type="checkbox" class="layer-toggle" data-layer="gas" checked/> Gas</label>
+          </div>
+          <div class="group">
+            <button id="btn-upload">Carica planimetria</button>
+            <input type="file" id="upload-input" accept="image/*" />
+          </div>
+        </div>
+
+        <div id="canvas-wrap">
+          <div id="empty-state">
+            <p>Nessun piano selezionato.</p>
+            <button id="empty-add-floor">Aggiungi il primo piano</button>
+          </div>
+          <canvas id="plan-canvas" style="display:none;"></canvas>
+        </div>
+      </section>
+
+      <!-- Dettagli elemento selezionato -->
+      <aside id="details">
+        <h2>Dettagli</h2>
+        <div id="details-empty">Seleziona o crea un elemento sulla planimetria.</div>
+        <div id="details-form" style="display:none;"></div>
+
+        <div id="layer-list"></div>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   CONFIGURAZIONE SUPABASE
+   ========================================================= */
+const SUPABASE_URL = "https://erukzvrtjnvyzjvfuirn.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_FDhQ03affjzeyhCHuoKulg_Rp7PdyLM";
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/* =========================================================
+   STATO GLOBALE
+   ========================================================= */
+const state = {
+  user: null,
+  floors: [],
+  activeFloorId: null,
+  activeFloorPlan: null,   // record floor_plans attivo
+  image: null,             // HTMLImageElement caricata
+  rooms: [],
+  points: [],
+  activeTool: null,        // 'room' | 'presa_esistente' | 'presa_nuova' | 'idrico' | 'gas'
+  drawingRoomPoints: [],   // vertici in corso per una nuova stanza
+  selectedElement: null,   // { type:'room'|'point', id }
+};
+
+const TOOL_TO_KIND_STATUS = {
+  presa_esistente: { kind: 'presa_elettrica', status: 'esistente' },
+  presa_nuova:      { kind: 'presa_elettrica', status: 'nuova' },
+  idrico:           { kind: 'idrico', status: 'esistente' },
+  gas:              { kind: 'gas', status: 'esistente' },
+};
+
+/* =========================================================
+   AUTENTICAZIONE
+   ========================================================= */
+const authScreen = document.getElementById('auth-screen');
+const appEl = document.getElementById('app');
+const authMsg = document.getElementById('auth-msg');
+
+document.getElementById('btn-login').addEventListener('click', async () => {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  authMsg.textContent = '';
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) authMsg.textContent = error.message;
+});
+
+document.getElementById('btn-signup').addEventListener('click', async () => {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  authMsg.textContent = '';
+  const { error } = await supabase.auth.signUp({ email, password });
+  if (error) authMsg.textContent = error.message;
+  else authMsg.style.color = 'var(--accent)', authMsg.textContent = 'Controlla la mail per confermare l\'account.';
+});
+
+document.getElementById('btn-logout').addEventListener('click', async () => {
+  await supabase.auth.signOut();
+});
+
+supabase.auth.onAuthStateChange((_event, session) => {
+  state.user = session ? session.user : null;
+  if (state.user) {
+    authScreen.style.display = 'none';
+    appEl.classList.add('visible');
+    document.getElementById('user-email').textContent = state.user.email;
+    loadFloors();
+  } else {
+    authScreen.style.display = 'flex';
+    appEl.classList.remove('visible');
+  }
+});
+
+/* =========================================================
+   PIANI (floors)
+   ========================================================= */
+async function loadFloors() {
+  const { data, error } = await supabase
+    .from('floors')
+    .select('*')
+    .order('order_index', { ascending: true });
+  if (error) { console.error(error); return; }
+  state.floors = data || [];
+  renderFloorList();
+}
+
+function renderFloorList() {
+  const list = document.getElementById('floor-list');
+  list.innerHTML = '';
+  state.floors.forEach(floor => {
+    const div = document.createElement('div');
+    div.className = 'floor-item' + (floor.id === state.activeFloorId ? ' active' : '');
+    div.textContent = floor.name;
+    div.addEventListener('click', () => selectFloor(floor.id));
+    list.appendChild(div);
+  });
+}
+
+async function addFloor() {
+  const name = prompt('Nome del piano (es. "Piano Terra"):');
+  if (!name) return;
+  const { data, error } = await supabase
+    .from('floors')
+    .insert({ user_id: state.user.id, name, order_index: state.floors.length })
+    .select()
+    .single();
+  if (error) { alert(error.message); return; }
+  state.floors.push(data);
+  renderFloorList();
+  selectFloor(data.id);
+}
+document.getElementById('add-floor-btn').addEventListener('click', addFloor);
+document.getElementById('empty-add-floor').addEventListener('click', addFloor);
+
+async function selectFloor(floorId) {
+  state.activeFloorId = floorId;
+  renderFloorList();
+  await loadActiveFloorPlan();
+}
+
+/* =========================================================
+   PLANIMETRIA ATTIVA (floor_plans) + upload immagine
+   ========================================================= */
+async function loadActiveFloorPlan() {
+  const { data, error } = await supabase
+    .from('floor_plans')
+    .select('*')
+    .eq('floor_id', state.activeFloorId)
+    .eq('is_active', true)
+    .maybeSingle();
+  if (error) { console.error(error); return; }
+
+  state.activeFloorPlan = data || null;
+
+  if (!data) {
+    document.getElementById('empty-state').style.display = 'flex';
+    document.getElementById('plan-canvas').style.display = 'none';
+    state.rooms = [];
+    state.points = [];
+    return;
+  }
+
+  const { data: urlData } = await supabase.storage
+    .from('planimetrie')
+    .createSignedUrl(data.image_path, 3600);
+
+  const img = new Image();
+  img.onload = async () => {
+    state.image = img;
+    document.getElementById('empty-state').style.display = 'none';
+    const canvas = document.getElementById('plan-canvas');
+    canvas.style.display = 'block';
+    await loadRoomsAndPoints();
+    drawCanvas();
+  };
+  img.src = urlData.signedUrl;
+}
+
+document.getElementById('btn-upload').addEventListener('click', () => {
+  if (!state.activeFloorId) { alert('Seleziona prima un piano.'); return; }
+  document.getElementById('upload-input').click();
+});
+
+document.getElementById('upload-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const path = `${state.user.id}/${state.activeFloorId}_${Date.now()}.${file.name.split('.').pop()}`;
+  const { error: upErr } = await supabase.storage.from('planimetrie').upload(path, file);
+  if (upErr) { alert(upErr.message); return; }
+
+  // dimensioni immagine
+  const dims = await new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve({ w: img.width, h: img.height });
+    img.src = URL.createObjectURL(file);
+  });
+
+  // disattiva planimetria precedente (se esiste) e crea la nuova
+  if (state.activeFloorPlan) {
+    await supabase.from('floor_plans').update({ is_active: false }).eq('id', state.activeFloorPlan.id);
+  }
+
+  const { data, error } = await supabase
+    .from('floor_plans')
+    .insert({
+      floor_id: state.activeFloorId,
+      user_id: state.user.id,
+      image_path: path,
+      image_width: dims.w,
+      image_height: dims.h,
+      is_active: true,
+    })
+    .select()
+    .single();
+  if (error) { alert(error.message); return; }
+
+  await loadActiveFloorPlan();
+});
+
+/* =========================================================
+   STANZE E PUNTI IMPIANTO — caricamento
+   ========================================================= */
+async function loadRoomsAndPoints() {
+  const fpId = state.activeFloorPlan.id;
+
+  const [{ data: rooms, error: e1 }, { data: points, error: e2 }] = await Promise.all([
+    supabase.from('rooms').select('*').eq('floor_plan_id', fpId),
+    supabase.from('installation_points').select('*').eq('floor_plan_id', fpId),
+  ]);
+  if (e1) console.error(e1);
+  if (e2) console.error(e2);
+
+  state.rooms = rooms || [];
+  state.points = points || [];
+  renderLayerList();
+}
+
+/* =========================================================
+   STRUMENTI (toolbar)
+   ========================================================= */
+document.querySelectorAll('#toolbar [data-tool]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tool = btn.dataset.tool;
+    state.activeTool = state.activeTool === tool ? null : tool;
+    state.drawingRoomPoints = [];
+    document.querySelectorAll('#toolbar [data-tool]').forEach(b =>
+      b.classList.toggle('active', b.dataset.tool === state.activeTool)
+    );
+  });
+});
+
+document.querySelectorAll('.layer-toggle').forEach(cb => {
+  cb.addEventListener('change', drawCanvas);
+});
+
+/* =========================================================
+   CANVAS — disegno e interazione
+   ========================================================= */
+const canvas = document.getElementById('plan-canvas');
+const ctx = canvas.getContext('2d');
+
+function drawCanvas() {
+  if (!state.image) return;
+  canvas.width = state.image.width;
+  canvas.height = state.image.height;
+  ctx.drawImage(state.image, 0, 0);
+
+  const showRooms = document.querySelector('[data-layer="room"]').checked;
+  const showPrese = document.querySelector('[data-layer="presa"]').checked;
+  const showIdrico = document.querySelector('[data-layer="idrico"]').checked;
+  const showGas = document.querySelector('[data-layer="gas"]').checked;
+
+  // stanze
+  if (showRooms) {
+    state.rooms.forEach(room => {
+      const pts = room.points || [];
+      if (pts.length < 2) return;
+      ctx.beginPath();
+      pts.forEach((p, i) => {
+        const x = p.x * canvas.width, y = p.y * canvas.height;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      });
+      ctx.closePath();
+      ctx.strokeStyle = room.color || '#3B82F6';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = (room.color || '#3B82F6') + '22';
+      ctx.fill();
+
+      const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length * canvas.width;
+      const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length * canvas.height;
+      ctx.fillStyle = '#1c2321';
+      ctx.font = '14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(room.name, cx, cy);
+    });
+  }
+
+  // vertici stanza in corso di disegno
+  if (state.activeTool === 'room' && state.drawingRoomPoints.length) {
+    ctx.beginPath();
+    state.drawingRoomPoints.forEach((p, i) => {
+      const x = p.x * canvas.width, y = p.y * canvas.height;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = '#3B82F6';
+    ctx.setLineDash([5, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // punti impianto
+  const colors = {
+    presa_elettrica: { esistente: '#c9821f', nuova: '#2f8f4e' },
+    idrico: { esistente: '#2196c9', nuova: '#2196c9' },
+    gas: { esistente: '#b23a3a', nuova: '#b23a3a' },
+  };
+  state.points.forEach(pt => {
+    if (pt.kind === 'presa_elettrica' && !showPrese) return;
+    if (pt.kind === 'idrico' && !showIdrico) return;
+    if (pt.kind === 'gas' && !showGas) return;
+
+    const x = pt.x * canvas.width, y = pt.y * canvas.height;
+    const color = (colors[pt.kind] && colors[pt.kind][pt.status]) || '#555';
+    ctx.beginPath();
+    ctx.arc(x, y, 7, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  });
+}
+
+canvas.addEventListener('click', async (e) => {
+  if (!state.activeTool || !state.activeFloorPlan) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width;
+  const y = (e.clientY - rect.top) / rect.height;
+
+  if (state.activeTool === 'room') {
+    state.drawingRoomPoints.push({ x, y });
+    drawCanvas();
+    return;
+  }
+
+  const conf = TOOL_TO_KIND_STATUS[state.activeTool];
+  if (!conf) return;
+
+  const { data, error } = await supabase
+    .from('installation_points')
+    .insert({
+      floor_plan_id: state.activeFloorPlan.id,
+      user_id: state.user.id,
+      kind: conf.kind,
+      status: conf.status,
+      x, y,
+    })
+    .select()
+    .single();
+  if (error) { alert(error.message); return; }
+
+  state.points.push(data);
+  renderLayerList();
+  drawCanvas();
+  selectElement('point', data.id);
+});
+
+// doppio click per chiudere il poligono stanza in corso
+canvas.addEventListener('dblclick', async () => {
+  if (state.activeTool !== 'room' || state.drawingRoomPoints.length < 3) return;
+  const name = prompt('Nome della stanza:');
+  if (!name) { state.drawingRoomPoints = []; drawCanvas(); return; }
+
+  const { data, error } = await supabase
+    .from('rooms')
+    .insert({
+      floor_plan_id: state.activeFloorPlan.id,
+      user_id: state.user.id,
+      name,
+      points: state.drawingRoomPoints,
+    })
+    .select()
+    .single();
+
+  state.drawingRoomPoints = [];
+  if (error) { alert(error.message); return; }
+
+  state.rooms.push(data);
+  renderLayerList();
+  drawCanvas();
+});
+
+/* =========================================================
+   PANNELLO DETTAGLI + LISTA LAYER
+   (implementazione base — verrà estesa)
+   ========================================================= */
+function renderLayerList() {
+  const container = document.getElementById('layer-list');
+  container.innerHTML = '<h2>Elementi in questo piano</h2>';
+
+  state.rooms.forEach(r => {
+    const row = document.createElement('div');
+    row.className = 'layer-row';
+    row.textContent = '▢ ' + r.name;
+    row.addEventListener('click', () => selectElement('room', r.id));
+    container.appendChild(row);
+  });
+
+  const kindLabel = { presa_elettrica: 'Presa', idrico: 'Idrico', gas: 'Gas' };
+  state.points.forEach(p => {
+    const row = document.createElement('div');
+    row.className = 'layer-row';
+    row.textContent = '● ' + (p.label || kindLabel[p.kind]) + ' (' + p.status + ')';
+    row.addEventListener('click', () => selectElement('point', p.id));
+    container.appendChild(row);
+  });
+}
+
+function selectElement(type, id) {
+  state.selectedElement = { type, id };
+  // Il form dei dettagli (modifica nome/etichetta/note, eliminazione)
+  // viene implementato nella prossima parte.
+}
+
+/* =========================================================
+   INIZIALIZZAZIONE
+   ========================================================= */
+supabase.auth.getSession().then(({ data: { session } }) => {
+  state.user = session ? session.user : null;
+  if (state.user) {
+    authScreen.style.display = 'none';
+    appEl.classList.add('visible');
+    document.getElementById('user-email').textContent = state.user.email;
+    loadFloors();
+  }
+});
+</script>
+</body>
+</html>
