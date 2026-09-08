@@ -227,6 +227,23 @@
     cursor: pointer;
     user-select: none;
   }
+
+  /* Su desktop, se la finestra o lo zoom del browser riducono lo spazio,
+     la toolbar va a capo su più righe invece di essere tagliata
+     (nascosta) dalla colonna dei dettagli con la scrollbar invisibile. */
+  @media (min-width: 769px) {
+    #toolbar {
+      flex-wrap: wrap;
+      overflow-x: visible;
+      white-space: normal;
+      height: auto;
+      row-gap: 8px;
+    }
+    #toolbar .group {
+      flex-wrap: wrap;
+      row-gap: 6px;
+    }
+  }
   
   /* Ottimizzazioni per schermi molto stretti (< 480px) */
   @media (max-width: 480px) {
@@ -423,6 +440,17 @@
     background: var(--accent-soft);
     color: var(--accent);
     font-weight: 600;
+  }
+  .layer-row.indented {
+    padding-left: 26px;
+    font-size: 0.82rem;
+  }
+  .layer-group-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #9a9a9a;
+    padding: 10px 8px 2px;
   }
   #details-form .save-btn {
     width: 100%;
@@ -1384,7 +1412,20 @@ function renderLayerList() {
   const container = document.getElementById('layer-list');
   container.innerHTML = '<h2>Elementi in questo piano</h2>';
   const sel = state.selectedElement;
+  const statusLabel = { esistente: 'esistente', nuova: 'nuovo' };
 
+  function makePointRow(p) {
+    const row = document.createElement('div');
+    row.className = 'layer-row indented' + (sel && sel.type === 'point' && sel.id === p.id ? ' selected' : '');
+    row.textContent = '● ' + (p.label || KIND_LABELS[p.kind] || p.kind) + ' (' + (statusLabel[p.status] || p.status) + ')';
+    row.addEventListener('click', () => {
+      selectElement('point', p.id);
+      if (window.innerWidth <= 768) setMobileTab('details');
+    });
+    return row;
+  }
+
+  // Stanze, ciascuna seguita (indentati) dai punti che le appartengono
   state.rooms.forEach(r => {
     const row = document.createElement('div');
     row.className = 'layer-row' + (sel && sel.type === 'room' && sel.id === r.id ? ' selected' : '');
@@ -1394,19 +1435,22 @@ function renderLayerList() {
       if (window.innerWidth <= 768) setMobileTab('details');
     });
     container.appendChild(row);
+
+    state.points
+      .filter(p => p.room_id === r.id)
+      .forEach(p => container.appendChild(makePointRow(p)));
   });
 
-  const statusLabel = { esistente: 'esistente', nuova: 'nuovo' };
-  state.points.forEach(p => {
-    const row = document.createElement('div');
-    row.className = 'layer-row' + (sel && sel.type === 'point' && sel.id === p.id ? ' selected' : '');
-    row.textContent = '● ' + (p.label || KIND_LABELS[p.kind] || p.kind) + ' (' + (statusLabel[p.status] || p.status) + ')';
-    row.addEventListener('click', () => {
-      selectElement('point', p.id);
-      if (window.innerWidth <= 768) setMobileTab('details');
-    });
-    container.appendChild(row);
-  });
+  // Punti senza stanza assegnata (o con room_id orfano), elencati a parte
+  const roomIds = new Set(state.rooms.map(r => r.id));
+  const unassigned = state.points.filter(p => !p.room_id || !roomIds.has(p.room_id));
+  if (unassigned.length) {
+    const label = document.createElement('div');
+    label.className = 'layer-group-label';
+    label.textContent = 'Senza stanza assegnata';
+    container.appendChild(label);
+    unassigned.forEach(p => container.appendChild(makePointRow(p)));
+  }
 }
 
 function selectElement(type, id) {
