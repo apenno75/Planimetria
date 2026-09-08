@@ -470,7 +470,7 @@
   @media (max-width: 768px) {
     #mobile-nav { display: flex; }
     
-    #sidebar, #details {
+    #sidebar, #details, #canvas-area {
       position: absolute;
       top: 0; left: 0; right: 0; bottom: 0;
       width: 100%;
@@ -479,13 +479,18 @@
       display: none;
     }
 
+    /* Di default (prima che il JS imposti la tab attiva) mostra "Piani" */
+    #sidebar {
+      display: block;
+    }
+
     #sidebar.mobile-visible,
     #details.mobile-visible {
       display: block;
     }
 
-    #canvas-area.mobile-hidden {
-      display: none;
+    #canvas-area.mobile-visible {
+      display: flex;
     }
   }
   
@@ -628,11 +633,11 @@
 
     <!-- Barra di navigazione Mobile Bottom -->
     <nav id="mobile-nav">
-      <button id="nav-tab-floors">
+      <button id="nav-tab-floors" class="active">
         <svg viewBox="0 0 24 24"><path d="M12 3L2 12h3v8h6v-6h2v6h6v-8h3L12 3z"/></svg>
         Piani
       </button>
-      <button id="nav-tab-canvas" class="active">
+      <button id="nav-tab-canvas">
         <svg viewBox="0 0 24 24"><path d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9A1 1 0 0 0 2.7 6.1L3 6.25V21l5.5-2.1 6 2.1 5.64-1.9a1 1 0 0 0 .66-1.2L21 17.75V3.5a.5.5 0 0 0-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/></svg>
         Mappa
       </button>
@@ -704,6 +709,11 @@ function getIconImage(kind, color) {
   if (cachedIconImages[key]) return cachedIconImages[key];
 
   const img = new Image();
+  // Le icone SVG (data URI) si caricano in modo asincrono: se drawCanvas()
+  // viene eseguito prima che siano pronte, ctx.drawImage() non disegna nulla
+  // per quell'icona. Ridisegniamo la mappa non appena l'icona è caricata,
+  // così i simboli compaiono subito senza dover muovere/zoomare la mappa.
+  img.onload = () => drawCanvas();
   let svgStr = '';
   if (kind === 'gas') {
     svgStr = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
@@ -753,17 +763,16 @@ function setMobileTab(tab) {
 
   sidebar.classList.remove('mobile-visible');
   details.classList.remove('mobile-visible');
-  canvasArea.classList.remove('mobile-hidden');
+  canvasArea.classList.remove('mobile-visible');
 
   if (tab === 'floors') {
     sidebar.classList.add('mobile-visible');
-    canvasArea.classList.add('mobile-hidden');
     document.getElementById('nav-tab-floors').classList.add('active');
   } else if (tab === 'details') {
     details.classList.add('mobile-visible');
-    canvasArea.classList.add('mobile-hidden');
     document.getElementById('nav-tab-details').classList.add('active');
   } else {
+    canvasArea.classList.add('mobile-visible');
     document.getElementById('nav-tab-canvas').classList.add('active');
     setTimeout(drawCanvas, 50);
   }
