@@ -627,6 +627,10 @@
             <button id="tool-point" data-tool="point"><span class="legend-icon" id="point-preview-dot"></span>Punto</button>
           </div>
           <div class="group">
+            <select id="furniture-kind"></select>
+            <button id="tool-furniture" data-tool="furniture"><span class="legend-icon" id="furniture-preview-dot"></span>Arredo</button>
+          </div>
+          <div class="group">
             <button id="btn-zoom-out" title="Rimpicciolisci">-</button>
             <span id="zoom-level" style="font-size:0.8rem; min-width:38px; text-align:center;">100%</span>
             <button id="btn-zoom-in" title="Ingrandisci">+</button>
@@ -637,6 +641,7 @@
             <label><input type="checkbox" class="layer-toggle" data-layer="presa" checked/> El.</label>
             <label><input type="checkbox" class="layer-toggle" data-layer="idrico" checked/> Idr.</label>
             <label><input type="checkbox" class="layer-toggle" data-layer="gas" checked/> Gas</label>
+            <label><input type="checkbox" class="layer-toggle" data-layer="arredo" checked/> Arredi</label>
           </div>
           <div class="group">
             <button id="btn-upload">Carica foto</button>
@@ -752,6 +757,7 @@ const state = {
   image: null,             
   rooms: [],
   points: [],
+  furniture: [],
   activeTool: null,        
   drawingRoomPoints: [],   
   selectedElement: null,   
@@ -767,7 +773,11 @@ const state = {
   suppressNextClick: false,
   editingRoomId: null,    // id della stanza di cui si stanno modificando i vertici
   draggingVertex: null,   // { room, index } vertice della stanza attualmente trascinato
-  vertexMoved: false
+  vertexMoved: false,
+  draggingFurniture: null,   // arredo attualmente trascinato per spostarlo
+  furnitureMoved: false,
+  resizingFurniture: null,   // { item, handle, ... } durante il ridimensionamento
+  rotatingFurniture: null,   // { item, ... } durante la rotazione
 };
 
 const POINT_COLORS = {
@@ -830,6 +840,143 @@ function updatePointPreviewDot() {
 document.getElementById('point-kind').addEventListener('change', updatePointPreviewDot);
 document.getElementById('point-status').addEventListener('change', updatePointPreviewDot);
 updatePointPreviewDot();
+
+/* =========================================================
+   ARREDI — catalogo tipi, icone SVG viste dall'alto
+   ========================================================= */
+const FURNITURE_FILL = '#efe7d8';
+const FURNITURE_STROKE = '#4a4038';
+
+/* ratio = altezza/larghezza nella dimensione di default (l'utente può poi
+   ridimensionare liberamente trascinando le maniglie).
+   defaultW = larghezza iniziale come frazione della larghezza dell'immagine. */
+const FURNITURE_TYPES = {
+  wc:                 { label: 'WC',                  cat: 'Bagno',  ratio: 0.62, defaultW: 0.045 },
+  bidet:              { label: 'Bidet',                cat: 'Bagno',  ratio: 0.75, defaultW: 0.040 },
+  lavabo:             { label: 'Lavabo',               cat: 'Bagno',  ratio: 0.65, defaultW: 0.055 },
+  vasca:              { label: 'Vasca da bagno',       cat: 'Bagno',  ratio: 0.47, defaultW: 0.140 },
+  doccia:             { label: 'Doccia',               cat: 'Bagno',  ratio: 1.00, defaultW: 0.080 },
+  letto_singolo:      { label: 'Letto singolo',        cat: 'Notte',  ratio: 2.05, defaultW: 0.075 },
+  letto_matrimoniale: { label: 'Letto matrimoniale',   cat: 'Notte',  ratio: 1.18, defaultW: 0.130 },
+  comodino:           { label: 'Comodino',             cat: 'Notte',  ratio: 1.00, defaultW: 0.032 },
+  armadio:            { label: 'Armadio',              cat: 'Notte',  ratio: 0.45, defaultW: 0.120 },
+  divano_2p:          { label: 'Divano 2 posti',       cat: 'Giorno', ratio: 0.50, defaultW: 0.120 },
+  divano_3p:          { label: 'Divano 3 posti',       cat: 'Giorno', ratio: 0.37, defaultW: 0.160 },
+  poltrona:           { label: 'Poltrona',             cat: 'Giorno', ratio: 1.00, defaultW: 0.060 },
+  tavolo_rett:        { label: 'Tavolo rettangolare',  cat: 'Giorno', ratio: 0.57, defaultW: 0.120 },
+  tavolo_tondo:       { label: 'Tavolo rotondo',       cat: 'Giorno', ratio: 1.00, defaultW: 0.090 },
+  sedia:              { label: 'Sedia',                cat: 'Giorno', ratio: 1.00, defaultW: 0.032 },
+  tv_mobile:          { label: 'Mobile TV',            cat: 'Giorno', ratio: 0.31, defaultW: 0.110 },
+  libreria:           { label: 'Libreria',             cat: 'Giorno', ratio: 0.29, defaultW: 0.100 },
+  scrivania:          { label: 'Scrivania',            cat: 'Giorno', ratio: 0.50, defaultW: 0.100 },
+  cucina_top:         { label: 'Base cucina',          cat: 'Cucina', ratio: 0.41, defaultW: 0.140 },
+  frigorifero:        { label: 'Frigorifero',          cat: 'Cucina', ratio: 1.08, defaultW: 0.050 },
+  lavello:            { label: 'Lavello',              cat: 'Cucina', ratio: 0.61, defaultW: 0.070 },
+};
+const FURNITURE_LABELS = Object.fromEntries(Object.entries(FURNITURE_TYPES).map(([k, v]) => [k, v.label]));
+
+/* Popola la select con gli arredi raggruppati per categoria */
+(function populateFurnitureSelect() {
+  const sel = document.getElementById('furniture-kind');
+  const cats = {};
+  Object.entries(FURNITURE_TYPES).forEach(([key, t]) => {
+    (cats[t.cat] = cats[t.cat] || []).push([key, t]);
+  });
+  Object.entries(cats).forEach(([cat, items]) => {
+    const group = document.createElement('optgroup');
+    group.label = cat;
+    items.forEach(([key, t]) => {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = t.label;
+      group.appendChild(opt);
+    });
+    sel.appendChild(group);
+  });
+})();
+
+/* Markup SVG interno (viste dall'alto, schematiche) per ciascun tipo di arredo */
+function furnitureInnerSvg(kind) {
+  switch (kind) {
+    case 'wc':
+      return '<rect x="20" y="2" width="60" height="14" rx="4"/><ellipse cx="50" cy="42" rx="30" ry="18"/><ellipse cx="50" cy="42" rx="17" ry="9" fill="none"/>';
+    case 'bidet':
+      return '<circle cx="50" cy="12" r="3"/><ellipse cx="50" cy="46" rx="28" ry="26"/><ellipse cx="50" cy="46" rx="15" ry="14" fill="none"/>';
+    case 'lavabo':
+      return '<rect x="2" y="2" width="96" height="61" rx="8"/><ellipse cx="50" cy="36" rx="38" ry="20" fill="none"/><circle cx="50" cy="12" r="4"/>';
+    case 'vasca':
+      return '<rect x="2" y="2" width="96" height="43" rx="18"/><rect x="10" y="9" width="80" height="29" rx="12" fill="none"/><rect x="4" y="14" width="10" height="18" rx="4"/>';
+    case 'doccia':
+      return '<rect x="2" y="2" width="96" height="96" rx="10" fill="none"/><circle cx="50" cy="50" r="7"/><line x1="10" y1="10" x2="42" y2="42"/><line x1="90" y1="10" x2="58" y2="42"/><line x1="10" y1="90" x2="42" y2="58"/><line x1="90" y1="90" x2="58" y2="58"/>';
+    case 'letto_singolo':
+      return '<rect x="2" y="2" width="96" height="201" rx="6"/><rect x="12" y="12" width="76" height="45" rx="8" fill="none"/><line x1="2" y1="72" x2="98" y2="72"/>';
+    case 'letto_matrimoniale':
+      return '<rect x="2" y="2" width="96" height="114" rx="6"/><rect x="8" y="10" width="38" height="34" rx="6" fill="none"/><rect x="54" y="10" width="38" height="34" rx="6" fill="none"/><line x1="2" y1="52" x2="98" y2="52"/>';
+    case 'comodino':
+      return '<rect x="4" y="4" width="92" height="92" rx="8"/><circle cx="50" cy="34" r="14" fill="none"/><line x1="4" y1="70" x2="96" y2="70"/>';
+    case 'armadio':
+      return '<rect x="2" y="2" width="96" height="41" rx="4"/><line x1="50" y1="2" x2="50" y2="43"/><line x1="10" y1="10" x2="40" y2="35"/><line x1="90" y1="10" x2="60" y2="35"/>';
+    case 'divano_2p':
+      return '<rect x="2" y="14" width="96" height="34" rx="8"/><rect x="2" y="2" width="96" height="16" rx="6"/><line x1="50" y1="14" x2="50" y2="48"/><rect x="2" y="14" width="14" height="34" rx="4" fill="none"/><rect x="84" y="14" width="14" height="34" rx="4" fill="none"/>';
+    case 'divano_3p':
+      return '<rect x="2" y="11" width="96" height="26" rx="7"/><rect x="2" y="2" width="96" height="13" rx="5"/><line x1="34" y1="11" x2="34" y2="37"/><line x1="66" y1="11" x2="66" y2="37"/><rect x="2" y="11" width="11" height="26" rx="3" fill="none"/><rect x="87" y="11" width="11" height="26" rx="3" fill="none"/>';
+    case 'poltrona':
+      return '<rect x="18" y="2" width="64" height="20" rx="8"/><rect x="18" y="20" width="64" height="76" rx="10"/><rect x="2" y="20" width="18" height="76" rx="6" fill="none"/><rect x="80" y="20" width="18" height="76" rx="6" fill="none"/>';
+    case 'tavolo_rett':
+      return '<rect x="2" y="2" width="96" height="53" rx="6" fill="none"/>';
+    case 'tavolo_tondo':
+      return '<circle cx="50" cy="50" r="48" fill="none"/>';
+    case 'sedia':
+      return '<rect x="15" y="4" width="70" height="20" rx="6"/><rect x="15" y="30" width="70" height="65" rx="8"/>';
+    case 'tv_mobile':
+      return '<rect x="2" y="2" width="96" height="27" rx="4"/><line x1="22" y1="2" x2="22" y2="29"/><line x1="50" y1="2" x2="50" y2="29"/><line x1="78" y1="2" x2="78" y2="29"/>';
+    case 'libreria':
+      return '<rect x="2" y="2" width="96" height="25" rx="3"/><line x1="26" y1="2" x2="26" y2="27"/><line x1="50" y1="2" x2="50" y2="27"/><line x1="74" y1="2" x2="74" y2="27"/>';
+    case 'scrivania':
+      return '<rect x="2" y="2" width="96" height="46" rx="5" fill="none"/><rect x="66" y="2" width="30" height="46" rx="4"/>';
+    case 'cucina_top':
+      return '<rect x="2" y="2" width="96" height="37" rx="5" fill="none"/><circle cx="20" cy="20" r="7"/><circle cx="40" cy="20" r="7"/><circle cx="60" cy="20" r="7"/><rect x="76" y="8" width="18" height="24" rx="3"/>';
+    case 'frigorifero':
+      return '<rect x="2" y="2" width="96" height="104" rx="6"/><rect x="10" y="10" width="80" height="88" rx="4" fill="none"/><line x1="10" y1="10" x2="26" y2="26"/>';
+    case 'lavello':
+      return '<rect x="2" y="2" width="96" height="57" rx="6"/><ellipse cx="34" cy="30" rx="20" ry="16" fill="none"/><ellipse cx="74" cy="30" rx="14" ry="12" fill="none"/><circle cx="54" cy="8" r="3"/>';
+    default:
+      return '<rect x="2" y="2" width="96" height="96" rx="6" fill="none"/>';
+  }
+}
+
+function getFurnitureSvgString(kind) {
+  const type = FURNITURE_TYPES[kind];
+  const vbH = Math.round(100 * ((type && type.ratio) || 1));
+  return `<svg viewBox="0 0 100 ${vbH}" width="100%" height="100%">
+    <g fill="${FURNITURE_FILL}" stroke="${FURNITURE_STROKE}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">${furnitureInnerSvg(kind)}</g>
+  </svg>`;
+}
+
+/* Pre-render icone arredo su Image Objects per il canvas */
+const cachedFurnitureImages = {};
+function getFurnitureImage(kind) {
+  if (cachedFurnitureImages[kind]) return cachedFurnitureImages[kind];
+  const type = FURNITURE_TYPES[kind];
+  const vbH = Math.round(100 * ((type && type.ratio) || 1));
+  const img = new Image();
+  img.onload = () => drawCanvas();
+  const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 ${vbH}" width="100" height="${vbH}">
+    <g fill="${FURNITURE_FILL}" stroke="${FURNITURE_STROKE}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">${furnitureInnerSvg(kind)}</g>
+  </svg>`;
+  img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(svgStr);
+  cachedFurnitureImages[kind] = img;
+  return img;
+}
+
+function updateFurniturePreviewDot() {
+  const kind = document.getElementById('furniture-kind').value;
+  const dot = document.getElementById('furniture-preview-dot');
+  if (dot) dot.innerHTML = getFurnitureSvgString(kind);
+}
+document.getElementById('furniture-kind').addEventListener('change', updateFurniturePreviewDot);
+updateFurniturePreviewDot();
+
 
 // Inizializza icone legenda
 document.getElementById('leg-el-ex').innerHTML = getSvgIconString('presa_elettrica', POINT_COLORS.presa_elettrica.esistente);
@@ -985,6 +1132,7 @@ async function loadActiveFloorPlan() {
     document.getElementById('plan-canvas').style.display = 'none';
     state.rooms = [];
     state.points = [];
+    state.furniture = [];
     renderLayerList();
     renderDetailsForm();
     return;
@@ -1058,15 +1206,18 @@ document.getElementById('upload-input').addEventListener('change', async (e) => 
 async function loadRoomsAndPoints() {
   const fpId = state.activeFloorPlan.id;
 
-  const [{ data: rooms, error: e1 }, { data: points, error: e2 }] = await Promise.all([
+  const [{ data: rooms, error: e1 }, { data: points, error: e2 }, { data: furniture, error: e3 }] = await Promise.all([
     supabase.from('rooms').select('*').eq('floor_plan_id', fpId),
     supabase.from('installation_points').select('*').eq('floor_plan_id', fpId),
+    supabase.from('furniture_items').select('*').eq('floor_plan_id', fpId),
   ]);
   if (e1) console.error(e1);
   if (e2) console.error(e2);
+  if (e3) console.error(e3);
 
   state.rooms = rooms || [];
   state.points = points || [];
+  state.furniture = furniture || [];
   renderLayerList();
 }
 
@@ -1173,7 +1324,7 @@ let initialPinchDistance = null;
 
 canvas.addEventListener('touchstart', (e) => {
   if (e.touches.length === 1) {
-    if (state.activeTool === 'room' || state.activeTool === 'point') return;
+    if (state.activeTool === 'room' || state.activeTool === 'point' || state.activeTool === 'furniture') return;
 
     const { normX, normY } = clientToNormalized(e.touches[0].clientX, e.touches[0].clientY);
 
@@ -1192,11 +1343,33 @@ canvas.addEventListener('touchstart', (e) => {
       return;
     }
 
+    if (state.selectedElement && state.selectedElement.type === 'furniture') {
+      const selItem = state.furniture.find(f => f.id === state.selectedElement.id);
+      const handle = selItem && findFurnitureHandleAt(selItem, normX, normY);
+      if (handle) {
+        if (handle.type === 'rotate') {
+          state.rotatingFurniture = { item: selItem };
+        } else {
+          state.resizingFurniture = { item: selItem, corner: handle.corner };
+        }
+        state.furnitureMoved = false;
+        return;
+      }
+    }
+
     const pt = findPointNear(normX, normY);
     if (pt) {
       state.draggingPoint = pt;
       state.dragMoved = false;
       selectElement('point', pt.id);
+      return;
+    }
+
+    const furn = findFurnitureAt(normX, normY);
+    if (furn) {
+      state.draggingFurniture = furn;
+      state.furnitureMoved = false;
+      selectElement('furniture', furn.id);
       return;
     }
 
@@ -1227,6 +1400,35 @@ canvas.addEventListener('touchmove', (e) => {
     state.draggingPoint.x = Math.min(1, Math.max(0, normX));
     state.draggingPoint.y = Math.min(1, Math.max(0, normY));
     state.dragMoved = true;
+    drawCanvas();
+  } else if (e.touches.length === 1 && state.rotatingFurniture) {
+    const { item } = state.rotatingFurniture;
+    const bp = toBufferPoint(e.touches[0].clientX, e.touches[0].clientY);
+    const imgX = (bp.x - state.panX) / state.zoom;
+    const imgY = (bp.y - state.panY) / state.zoom;
+    const cx = item.x * canvas.width, cy = item.y * canvas.height;
+    const angleDeg = Math.atan2(imgY - cy, imgX - cx) * 180 / Math.PI + 90;
+    item.rotation = ((angleDeg % 360) + 360) % 360;
+    state.furnitureMoved = true;
+    drawCanvas();
+  } else if (e.touches.length === 1 && state.resizingFurniture) {
+    const { item } = state.resizingFurniture;
+    const bp = toBufferPoint(e.touches[0].clientX, e.touches[0].clientY);
+    const imgX = (bp.x - state.panX) / state.zoom;
+    const imgY = (bp.y - state.panY) / state.zoom;
+    const { lx, ly } = toFurnitureLocal(item, imgX, imgY);
+    const minPx = 8;
+    const halfW = Math.max(minPx, Math.abs(lx));
+    const halfH = Math.max(minPx, Math.abs(ly));
+    item.w = (halfW * 2) / canvas.width;
+    item.h = (halfH * 2) / canvas.width;
+    state.furnitureMoved = true;
+    drawCanvas();
+  } else if (e.touches.length === 1 && state.draggingFurniture) {
+    const { normX, normY } = clientToNormalized(e.touches[0].clientX, e.touches[0].clientY);
+    state.draggingFurniture.x = Math.min(1, Math.max(0, normX));
+    state.draggingFurniture.y = Math.min(1, Math.max(0, normY));
+    state.furnitureMoved = true;
     drawCanvas();
   } else if (e.touches.length === 1 && state.isDragging) {
     const bp = toBufferPoint(e.touches[0].clientX, e.touches[0].clientY);
@@ -1272,11 +1474,16 @@ canvas.addEventListener('touchend', async () => {
       const { error } = await supabase.from('installation_points').update({ x: pt.x, y: pt.y }).eq('id', pt.id);
       if (error) alert(error.message);
     }
+    return;
+  }
+
+  if (state.draggingFurniture || state.resizingFurniture || state.rotatingFurniture) {
+    await persistFurnitureChange();
   }
 });
 
 canvas.addEventListener('mousedown', (e) => {
-  if (state.activeTool === 'room' || state.activeTool === 'point') return;
+  if (state.activeTool === 'room' || state.activeTool === 'point' || state.activeTool === 'furniture') return;
   if (e.button !== 0) return;
 
   const { normX, normY } = clientToNormalized(e.clientX, e.clientY);
@@ -1296,11 +1503,35 @@ canvas.addEventListener('mousedown', (e) => {
     return;
   }
 
+  // Se un arredo è selezionato, controlla prima le sue maniglie
+  // (ridimensionamento agli angoli, rotazione in alto)
+  if (state.selectedElement && state.selectedElement.type === 'furniture') {
+    const selItem = state.furniture.find(f => f.id === state.selectedElement.id);
+    const handle = selItem && findFurnitureHandleAt(selItem, normX, normY);
+    if (handle) {
+      if (handle.type === 'rotate') {
+        state.rotatingFurniture = { item: selItem };
+      } else {
+        state.resizingFurniture = { item: selItem, corner: handle.corner };
+      }
+      state.furnitureMoved = false;
+      return;
+    }
+  }
+
   const pt = findPointNear(normX, normY);
   if (pt) {
     state.draggingPoint = pt;
     state.dragMoved = false;
     selectElement('point', pt.id);
+    return;
+  }
+
+  const furn = findFurnitureAt(normX, normY);
+  if (furn) {
+    state.draggingFurniture = furn;
+    state.furnitureMoved = false;
+    selectElement('furniture', furn.id);
     return;
   }
 
@@ -1311,6 +1542,41 @@ canvas.addEventListener('mousedown', (e) => {
 });
 
 window.addEventListener('mousemove', (e) => {
+  if (state.rotatingFurniture) {
+    const { item } = state.rotatingFurniture;
+    const bp = toBufferPoint(e.clientX, e.clientY);
+    const imgX = (bp.x - state.panX) / state.zoom;
+    const imgY = (bp.y - state.panY) / state.zoom;
+    const cx = item.x * canvas.width, cy = item.y * canvas.height;
+    const angleDeg = Math.atan2(imgY - cy, imgX - cx) * 180 / Math.PI + 90;
+    item.rotation = ((angleDeg % 360) + 360) % 360;
+    state.furnitureMoved = true;
+    drawCanvas();
+    return;
+  }
+  if (state.resizingFurniture) {
+    const { item, corner } = state.resizingFurniture;
+    const bp = toBufferPoint(e.clientX, e.clientY);
+    const imgX = (bp.x - state.panX) / state.zoom;
+    const imgY = (bp.y - state.panY) / state.zoom;
+    const { lx, ly } = toFurnitureLocal(item, imgX, imgY);
+    const minPx = 8;
+    const halfW = Math.max(minPx, Math.abs(lx));
+    const halfH = Math.max(minPx, Math.abs(ly));
+    item.w = (halfW * 2) / canvas.width;
+    item.h = (halfH * 2) / canvas.width;
+    state.furnitureMoved = true;
+    drawCanvas();
+    return;
+  }
+  if (state.draggingFurniture) {
+    const { normX, normY } = clientToNormalized(e.clientX, e.clientY);
+    state.draggingFurniture.x = Math.min(1, Math.max(0, normX));
+    state.draggingFurniture.y = Math.min(1, Math.max(0, normY));
+    state.furnitureMoved = true;
+    drawCanvas();
+    return;
+  }
   if (state.draggingVertex) {
     const { normX, normY } = clientToNormalized(e.clientX, e.clientY);
     state.draggingVertex.room.points[state.draggingVertex.index] = {
@@ -1363,12 +1629,48 @@ window.addEventListener('mouseup', async () => {
       const { error } = await supabase.from('installation_points').update({ x: pt.x, y: pt.y }).eq('id', pt.id);
       if (error) alert(error.message);
     }
+    return;
+  }
+
+  if (state.draggingFurniture || state.resizingFurniture || state.rotatingFurniture) {
+    await persistFurnitureChange();
   }
 });
 
-/* Cambia il cursore quando si passa sopra un punto o un vertice trascinabile */
+/* Salva su Supabase lo stato corrente dell'arredo che era in
+   spostamento/ridimensionamento/rotazione e ripulisce lo stato. */
+async function persistFurnitureChange() {
+  const item = state.draggingFurniture
+    || (state.resizingFurniture && state.resizingFurniture.item)
+    || (state.rotatingFurniture && state.rotatingFurniture.item)
+    || null;
+  const moved = state.furnitureMoved;
+  state.draggingFurniture = null;
+  state.resizingFurniture = null;
+  state.rotatingFurniture = null;
+  state.furnitureMoved = false;
+  if (item && moved) {
+    state.suppressNextClick = true;
+    const { error } = await supabase.from('furniture_items')
+      .update({ x: item.x, y: item.y, w: item.w, h: item.h, rotation: item.rotation })
+      .eq('id', item.id);
+    if (error) alert(error.message);
+    // Aggiorna il pannello dettagli (es. il campo "Rotazione") se l'arredo
+    // appena spostato/ridimensionato/ruotato è quello selezionato, altrimenti
+    // il valore mostrato resterebbe quello di prima del trascinamento e un
+    // successivo "Salva" lo sovrascriverebbe riportandolo indietro.
+    if (state.selectedElement && state.selectedElement.type === 'furniture' && state.selectedElement.id === item.id) {
+      renderDetailsForm();
+    }
+  }
+}
+
+/* Cambia il cursore quando si passa sopra un punto, un vertice
+   trascinabile o un arredo (corpo o maniglie) */
 canvas.addEventListener('mousemove', (e) => {
-  if (state.draggingPoint || state.draggingVertex || state.isDragging || state.activeTool) return;
+  if (state.draggingPoint || state.draggingVertex || state.isDragging ||
+      state.draggingFurniture || state.resizingFurniture || state.rotatingFurniture ||
+      state.activeTool) return;
   const { normX, normY } = clientToNormalized(e.clientX, e.clientY);
 
   if (state.editingRoomId) {
@@ -1378,8 +1680,20 @@ canvas.addEventListener('mousemove', (e) => {
     return;
   }
 
+  if (state.selectedElement && state.selectedElement.type === 'furniture') {
+    const selItem = state.furniture.find(f => f.id === state.selectedElement.id);
+    const handle = selItem && findFurnitureHandleAt(selItem, normX, normY);
+    if (handle) {
+      canvas.style.cursor = handle.type === 'rotate' ? 'alias' : 'nwse-resize';
+      return;
+    }
+  }
+
   const pt = findPointNear(normX, normY);
-  canvas.style.cursor = pt ? 'grab' : 'crosshair';
+  if (pt) { canvas.style.cursor = 'grab'; return; }
+
+  const furn = findFurnitureAt(normX, normY);
+  canvas.style.cursor = furn ? 'move' : 'crosshair';
 });
 
 
@@ -1403,6 +1717,7 @@ function drawCanvas() {
   const showPrese = document.querySelector('[data-layer="presa"]').checked;
   const showIdrico = document.querySelector('[data-layer="idrico"]').checked;
   const showGas = document.querySelector('[data-layer="gas"]').checked;
+  const showArredo = document.querySelector('[data-layer="arredo"]').checked;
 
   if (showRooms) {
     state.rooms.forEach(room => {
@@ -1512,6 +1827,75 @@ function drawCanvas() {
     }
   });
 
+  if (showArredo) {
+    state.furniture.forEach(item => {
+      const isSelected = state.selectedElement &&
+        state.selectedElement.type === 'furniture' && state.selectedElement.id === item.id;
+      const cx = item.x * canvas.width, cy = item.y * canvas.height;
+      const wPx = item.w * canvas.width, hPx = item.h * canvas.width;
+      const rot = (item.rotation || 0) * Math.PI / 180;
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(rot);
+
+      const furnImg = getFurnitureImage(item.kind);
+      ctx.drawImage(furnImg, -wPx / 2, -hPx / 2, wPx, hPx);
+
+      if (isSelected) {
+        ctx.strokeStyle = '#2f5d50';
+        ctx.lineWidth = 2 / state.zoom;
+        ctx.setLineDash([4 / state.zoom, 3 / state.zoom]);
+        ctx.strokeRect(-wPx / 2, -hPx / 2, wPx, hPx);
+        ctx.setLineDash([]);
+
+        const handleR = 6 / state.zoom;
+        const corners = [
+          [-wPx / 2, -hPx / 2], [wPx / 2, -hPx / 2],
+          [wPx / 2, hPx / 2], [-wPx / 2, hPx / 2],
+        ];
+        ctx.lineWidth = 1.5 / state.zoom;
+        corners.forEach(([hx, hy]) => {
+          ctx.beginPath();
+          ctx.arc(hx, hy, handleR, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+          ctx.strokeStyle = '#2f5d50';
+          ctx.stroke();
+        });
+
+        const rotOffset = 24 / state.zoom;
+        ctx.beginPath();
+        ctx.moveTo(0, -hPx / 2);
+        ctx.lineTo(0, -hPx / 2 - rotOffset);
+        ctx.strokeStyle = '#2f5d50';
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(0, -hPx / 2 - rotOffset, handleR, 0, Math.PI * 2);
+        ctx.fillStyle = '#2f5d50';
+        ctx.fill();
+      }
+
+      ctx.restore();
+
+      if (item.room_id) {
+        const room = state.rooms.find(r => r.id === item.room_id);
+        if (room && room.points && room.points.length) {
+          const rcx = room.points.reduce((s, p) => s + p.x, 0) / room.points.length * canvas.width;
+          const rcy = room.points.reduce((s, p) => s + p.y, 0) / room.points.length * canvas.height;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(rcx, rcy);
+          ctx.strokeStyle = FURNITURE_STROKE + '55';
+          ctx.setLineDash([2 / state.zoom, 3 / state.zoom]);
+          ctx.lineWidth = 1 / state.zoom;
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
+    });
+  }
+
   ctx.restore();
 }
 
@@ -1551,6 +1935,64 @@ function findRoomVertexNear(room, x, y, thresholdPx = 22) {
     if (d < threshold && d < closestDist) { closestIdx = i; closestDist = d; }
   });
   return closestIdx;
+}
+
+/* =========================================================
+   ARREDI — hit-testing (selezione, ridimensionamento, rotazione)
+   Tutti i calcoli avvengono in "spazio immagine" (pixel del canvas
+   prima di zoom/pan), coerente con come drawCanvas() posiziona
+   e ruota ogni arredo attorno al proprio centro.
+   ========================================================= */
+
+/* Converte un punto in spazio immagine nel sistema di riferimento
+   locale (non ruotato) dell'arredo, con origine nel suo centro. */
+function toFurnitureLocal(item, imgX, imgY) {
+  const cx = item.x * canvas.width, cy = item.y * canvas.height;
+  const rot = -(item.rotation || 0) * Math.PI / 180;
+  const dx = imgX - cx, dy = imgY - cy;
+  return {
+    lx: dx * Math.cos(rot) - dy * Math.sin(rot),
+    ly: dx * Math.sin(rot) + dy * Math.cos(rot),
+  };
+}
+
+/* Trova l'arredo sotto il punto (coordinate normalizzate 0-1),
+   tenendo conto della rotazione. Controlla dall'ultimo disegnato
+   (sopra gli altri) al primo. */
+function findFurnitureAt(normX, normY) {
+  const x = normX * canvas.width, y = normY * canvas.height;
+  for (let i = state.furniture.length - 1; i >= 0; i--) {
+    const item = state.furniture[i];
+    const { lx, ly } = toFurnitureLocal(item, x, y);
+    const wPx = item.w * canvas.width, hPx = item.h * canvas.width;
+    if (Math.abs(lx) <= wPx / 2 && Math.abs(ly) <= hPx / 2) return item;
+  }
+  return null;
+}
+
+/* Se il punto (coordinate normalizzate) cade su una maniglia
+   dell'arredo dato, ritorna { type: 'rotate' } oppure
+   { type: 'resize', corner: 'nw'|'ne'|'se'|'sw' }. Altrimenti null. */
+function findFurnitureHandleAt(item, normX, normY) {
+  if (!item) return null;
+  const x = normX * canvas.width, y = normY * canvas.height;
+  const { lx, ly } = toFurnitureLocal(item, x, y);
+  const wPx = item.w * canvas.width, hPx = item.h * canvas.width;
+  const hitR = 16 / state.zoom;
+  const rotOffset = 24 / state.zoom;
+
+  if (Math.hypot(lx - 0, ly - (-hPx / 2 - rotOffset)) <= hitR) return { type: 'rotate' };
+
+  const corners = [
+    { corner: 'nw', x: -wPx / 2, y: -hPx / 2 },
+    { corner: 'ne', x: wPx / 2, y: -hPx / 2 },
+    { corner: 'se', x: wPx / 2, y: hPx / 2 },
+    { corner: 'sw', x: -wPx / 2, y: hPx / 2 },
+  ];
+  for (const c of corners) {
+    if (Math.hypot(lx - c.x, ly - c.y) <= hitR) return { type: 'resize', corner: c.corner };
+  }
+  return null;
 }
 
 /* =========================================================
@@ -1658,12 +2100,55 @@ canvas.addEventListener('click', async (e) => {
     return;
   }
 
+  if (state.activeTool === 'furniture') {
+    const kind = document.getElementById('furniture-kind').value;
+    const type = FURNITURE_TYPES[kind] || { ratio: 1, defaultW: 0.08 };
+    const w = type.defaultW;
+    const h = w * type.ratio;
+
+    const { data, error } = await supabase
+      .from('furniture_items')
+      .insert({
+        floor_plan_id: state.activeFloorPlan.id,
+        user_id: state.user.id,
+        kind,
+        x: normX,
+        y: normY,
+        w, h,
+        rotation: 0,
+        room_id: null,
+      })
+      .select()
+      .single();
+
+    if (error) { alert(error.message); return; }
+
+    state.furniture.push(data);
+    renderLayerList();
+    drawCanvas();
+    selectElement('furniture', data.id);
+
+    const detailsEmpty = document.getElementById('details-empty');
+    detailsEmpty.style.display = 'block';
+    detailsEmpty.style.color = 'var(--accent)';
+    detailsEmpty.textContent = '✓ Arredo aggiunto con successo!';
+    setTimeout(() => {
+      detailsEmpty.style.color = '#9a9a9a';
+      renderDetailsForm();
+    }, 1200);
+
+    return;
+  }
+
   const pt = findPointNear(normX, normY);
   if (pt) {
     selectElement('point', pt.id);
     openPointModal(pt);
     return;
   }
+
+  const furn = findFurnitureAt(normX, normY);
+  if (furn) { selectElement('furniture', furn.id); return; }
 
   const room = findRoomAt(normX, normY);
   if (room) { selectElement('room', room.id); return; }
@@ -1724,7 +2209,18 @@ function renderLayerList() {
     return row;
   }
 
-  // Stanze, ciascuna seguita (indentati) dai punti che le appartengono
+  function makeFurnitureRow(item) {
+    const row = document.createElement('div');
+    row.className = 'layer-row indented' + (sel && sel.type === 'furniture' && sel.id === item.id ? ' selected' : '');
+    row.textContent = '◆ ' + (item.label || FURNITURE_LABELS[item.kind] || item.kind);
+    row.addEventListener('click', () => {
+      selectElement('furniture', item.id);
+      if (window.innerWidth <= 768) setMobileTab('details');
+    });
+    return row;
+  }
+
+  // Stanze, ciascuna seguita (indentati) dai punti e dagli arredi che le appartengono
   state.rooms.forEach(r => {
     const row = document.createElement('div');
     row.className = 'layer-row' + (sel && sel.type === 'room' && sel.id === r.id ? ' selected' : '');
@@ -1738,17 +2234,23 @@ function renderLayerList() {
     state.points
       .filter(p => p.room_id === r.id)
       .forEach(p => container.appendChild(makePointRow(p)));
+
+    state.furniture
+      .filter(f => f.room_id === r.id)
+      .forEach(f => container.appendChild(makeFurnitureRow(f)));
   });
 
-  // Punti senza stanza assegnata (o con room_id orfano), elencati a parte
+  // Punti e arredi senza stanza assegnata (o con room_id orfano), elencati a parte
   const roomIds = new Set(state.rooms.map(r => r.id));
   const unassigned = state.points.filter(p => !p.room_id || !roomIds.has(p.room_id));
-  if (unassigned.length) {
+  const unassignedFurniture = state.furniture.filter(f => !f.room_id || !roomIds.has(f.room_id));
+  if (unassigned.length || unassignedFurniture.length) {
     const label = document.createElement('div');
     label.className = 'layer-group-label';
     label.textContent = 'Senza stanza assegnata';
     container.appendChild(label);
     unassigned.forEach(p => container.appendChild(makePointRow(p)));
+    unassignedFurniture.forEach(f => container.appendChild(makeFurnitureRow(f)));
   }
 }
 
@@ -1824,6 +2326,7 @@ function renderDetailsForm() {
       if (state.editingRoomId === room.id) exitRoomEditMode();
       state.rooms = state.rooms.filter(r => r.id !== room.id);
       state.points.forEach(p => { if (p.room_id === room.id) p.room_id = null; });
+      state.furniture.forEach(f => { if (f.room_id === room.id) f.room_id = null; });
       state.selectedElement = null;
       renderDetailsForm();
       renderLayerList();
@@ -1899,6 +2402,77 @@ function renderDetailsForm() {
       const { error } = await supabase.from('installation_points').delete().eq('id', point.id);
       if (error) { alert(error.message); return; }
       state.points = state.points.filter(p => p.id !== point.id);
+      state.selectedElement = null;
+      renderDetailsForm();
+      renderLayerList();
+      drawCanvas();
+    });
+    return;
+  }
+
+  if (sel.type === 'furniture') {
+    const item = state.furniture.find(f => f.id === sel.id);
+    if (!item) { state.selectedElement = null; renderDetailsForm(); return; }
+
+    const roomOptions = ['<option value="">— nessuna —</option>']
+      .concat(state.rooms.map(r => `<option value="${r.id}" ${item.room_id === r.id ? 'selected' : ''}>${escapeHtml(r.name)}</option>`))
+      .join('');
+
+    formEl.innerHTML = `
+      <div class="field">
+        <label>Tipo arredo</label>
+        <input type="text" value="${escapeHtml(FURNITURE_LABELS[item.kind] || item.kind)}" disabled />
+      </div>
+      <div class="field">
+        <label>Etichetta (facoltativa)</label>
+        <input type="text" id="detail-furn-label" value="${escapeHtml(item.label || '')}" placeholder="es. Letto camera ospiti" />
+      </div>
+      <div class="field">
+        <label>Stanza di appartenenza</label>
+        <select id="detail-furn-room">${roomOptions}</select>
+      </div>
+      <div class="field">
+        <label>Rotazione (gradi)</label>
+        <input type="number" id="detail-furn-rotation" value="${Math.round(item.rotation || 0)}" min="0" max="359" step="1" />
+      </div>
+      <p style="font-size:0.78rem; color:#7a7a7a; margin:-4px 0 12px;">
+        Puoi anche trascinare l'arredo per spostarlo, trascinare le maniglie agli angoli per ridimensionarlo e quella in alto per ruotarlo.
+      </p>
+      <button class="save-btn" id="detail-save">Salva</button>
+      <button class="delete" id="detail-delete">Elimina arredo</button>
+    `;
+
+    document.getElementById('detail-save').addEventListener('click', async () => {
+      const label = document.getElementById('detail-furn-label').value.trim();
+      const room_id = document.getElementById('detail-furn-room').value || null;
+      let rotation = parseFloat(document.getElementById('detail-furn-rotation').value);
+      if (isNaN(rotation)) rotation = 0;
+      rotation = ((rotation % 360) + 360) % 360;
+      const { error } = await supabase.from('furniture_items')
+        .update({ label, room_id, rotation })
+        .eq('id', item.id);
+      if (error) { alert(error.message); return; }
+      item.label = label;
+      item.room_id = room_id;
+      item.rotation = rotation;
+      renderLayerList();
+      drawCanvas();
+
+      const saveBtn = document.getElementById('detail-save');
+      const originalText = saveBtn.textContent;
+      saveBtn.textContent = '✓ Salvato!';
+      saveBtn.style.background = 'var(--presa-nuova)';
+      setTimeout(() => {
+        saveBtn.textContent = originalText;
+        saveBtn.style.background = '';
+      }, 1500);
+    });
+
+    document.getElementById('detail-delete').addEventListener('click', async () => {
+      if (!confirm('Eliminare questo arredo?')) return;
+      const { error } = await supabase.from('furniture_items').delete().eq('id', item.id);
+      if (error) { alert(error.message); return; }
+      state.furniture = state.furniture.filter(f => f.id !== item.id);
       state.selectedElement = null;
       renderDetailsForm();
       renderLayerList();
