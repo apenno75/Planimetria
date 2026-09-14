@@ -274,6 +274,11 @@
     background: #fff;
     cursor: crosshair;
     touch-action: none;
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    display: block;
   }
   #empty-state {
     text-align: center;
@@ -636,6 +641,7 @@
           <div class="group">
             <button id="btn-upload">Carica foto</button>
             <input type="file" id="upload-input" accept="image/*" capture="environment" />
+            <button id="btn-print" title="Stampa la planimetria con tutti i punti">Stampa</button>
           </div>
         </div>
 
@@ -989,6 +995,7 @@ async function loadActiveFloorPlan() {
     .createSignedUrl(data.image_path, 3600);
 
   const img = new Image();
+  img.crossOrigin = 'anonymous';
   img.onload = async () => {
     state.image = img;
     state.zoom = 1;
@@ -1131,11 +1138,22 @@ document.getElementById('btn-zoom-reset').addEventListener('click', () => {
 const canvas = document.getElementById('plan-canvas');
 const ctx = canvas.getContext('2d');
 
+/* Converte coordinate client (mouse/touch, in pixel CSS) in coordinate del buffer
+   del canvas (pixel reali dell'immagine). Necessario perché il canvas ora viene
+   ridimensionato via CSS (max-width/max-height) per adattarsi al contenitore. */
+function toBufferPoint(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  return {
+    x: (clientX - rect.left) * scaleX,
+    y: (clientY - rect.top) * scaleY,
+  };
+}
+
 /* Converte coordinate client (mouse/touch) in coordinate normalizzate (0-1) sull'immagine */
 function clientToNormalized(clientX, clientY) {
-  const rect = canvas.getBoundingClientRect();
-  const clickX = clientX - rect.left;
-  const clickY = clientY - rect.top;
+  const { x: clickX, y: clickY } = toBufferPoint(clientX, clientY);
   const imageCanvasX = (clickX - state.panX) / state.zoom;
   const imageCanvasY = (clickY - state.panY) / state.zoom;
   return { normX: imageCanvasX / canvas.width, normY: imageCanvasY / canvas.height };
@@ -1145,9 +1163,7 @@ canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   if (!state.image) return;
   const zoomIntensity = 0.1;
-  const rect = canvas.getBoundingClientRect();
-  const mouseX = e.clientX - rect.left;
-  const mouseY = e.clientY - rect.top;
+  const { x: mouseX, y: mouseY } = toBufferPoint(e.clientX, e.clientY);
   const newZoom = e.deltaY < 0 ? state.zoom * (1 + zoomIntensity) : state.zoom / (1 + zoomIntensity);
   applyZoom(newZoom, mouseX, mouseY);
 }, { passive: false });
@@ -1170,8 +1186,9 @@ canvas.addEventListener('touchstart', (e) => {
         return;
       }
       state.isDragging = true;
-      state.startX = e.touches[0].clientX - state.panX;
-      state.startY = e.touches[0].clientY - state.panY;
+      { const bp = toBufferPoint(e.touches[0].clientX, e.touches[0].clientY);
+        state.startX = bp.x - state.panX;
+        state.startY = bp.y - state.panY; }
       return;
     }
 
@@ -1184,8 +1201,9 @@ canvas.addEventListener('touchstart', (e) => {
     }
 
     state.isDragging = true;
-    state.startX = e.touches[0].clientX - state.panX;
-    state.startY = e.touches[0].clientY - state.panY;
+    { const bp = toBufferPoint(e.touches[0].clientX, e.touches[0].clientY);
+      state.startX = bp.x - state.panX;
+      state.startY = bp.y - state.panY; }
   } else if (e.touches.length === 2) {
     state.isDragging = false;
     initialPinchDistance = Math.hypot(
@@ -1211,8 +1229,9 @@ canvas.addEventListener('touchmove', (e) => {
     state.dragMoved = true;
     drawCanvas();
   } else if (e.touches.length === 1 && state.isDragging) {
-    state.panX = e.touches[0].clientX - state.startX;
-    state.panY = e.touches[0].clientY - state.startY;
+    const bp = toBufferPoint(e.touches[0].clientX, e.touches[0].clientY);
+    state.panX = bp.x - state.startX;
+    state.panY = bp.y - state.startY;
     drawCanvas();
   } else if (e.touches.length === 2 && initialPinchDistance) {
     const currentDist = Math.hypot(
@@ -1271,8 +1290,9 @@ canvas.addEventListener('mousedown', (e) => {
       return;
     }
     state.isDragging = true;
-    state.startX = e.clientX - state.panX;
-    state.startY = e.clientY - state.panY;
+    { const bp = toBufferPoint(e.clientX, e.clientY);
+      state.startX = bp.x - state.panX;
+      state.startY = bp.y - state.panY; }
     return;
   }
 
@@ -1285,8 +1305,9 @@ canvas.addEventListener('mousedown', (e) => {
   }
 
   state.isDragging = true;
-  state.startX = e.clientX - state.panX;
-  state.startY = e.clientY - state.panY;
+  { const bp = toBufferPoint(e.clientX, e.clientY);
+    state.startX = bp.x - state.panX;
+    state.startY = bp.y - state.panY; }
 });
 
 window.addEventListener('mousemove', (e) => {
@@ -1309,8 +1330,9 @@ window.addEventListener('mousemove', (e) => {
     return;
   }
   if (!state.isDragging) return;
-  state.panX = e.clientX - state.startX;
-  state.panY = e.clientY - state.startY;
+  const bp = toBufferPoint(e.clientX, e.clientY);
+  state.panX = bp.x - state.startX;
+  state.panY = bp.y - state.startY;
   drawCanvas();
 });
 
@@ -1890,6 +1912,90 @@ function escapeHtml(str) {
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[ch]));
 }
+
+/* =========================================================
+   STAMPA — planimetria completa con tutti i punti
+   ========================================================= */
+function printFloorPlan() {
+  if (!state.image) { alert('Nessuna planimetria caricata da stampare.'); return; }
+
+  // Salva la vista corrente (zoom, pan, layer visibili)
+  const prevZoom = state.zoom;
+  const prevPanX = state.panX;
+  const prevPanY = state.panY;
+  const layerToggles = document.querySelectorAll('.layer-toggle');
+  const prevChecked = Array.from(layerToggles).map(cb => cb.checked);
+
+  // Forza la vista completa (intera immagine, zoom 1:1) con tutti i layer/punti visibili
+  state.zoom = 1;
+  state.panX = 0;
+  state.panY = 0;
+  layerToggles.forEach(cb => { cb.checked = true; });
+  drawCanvas();
+
+  let dataUrl;
+  try {
+    dataUrl = canvas.toDataURL('image/png');
+  } catch (err) {
+    console.error(err);
+    alert('Impossibile generare la stampa a causa di una restrizione di sicurezza del browser sull\'immagine caricata.');
+    return;
+  } finally {
+    // Ripristina sempre la vista dell'utente
+    state.zoom = prevZoom;
+    state.panX = prevPanX;
+    state.panY = prevPanY;
+    layerToggles.forEach((cb, i) => { cb.checked = prevChecked[i]; });
+    drawCanvas();
+  }
+
+  const floor = state.floors.find(f => f.id === state.activeFloorId);
+  const title = escapeHtml(floor ? floor.name : 'Planimetria');
+
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    alert('Il browser ha bloccato la finestra di stampa. Consenti i popup per questo sito e riprova.');
+    return;
+  }
+  printWindow.document.write(`<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<title>${title}</title>
+<style>
+  @page { margin: 10mm; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  h1 { font-size: 1.1rem; margin: 12px 0; text-align: center; }
+  img { max-width: 100%; max-height: 90vh; height: auto; }
+  @media print {
+    h1 { margin: 0 0 8px; }
+    img { max-height: none; }
+  }
+</style>
+</head>
+<body>
+  <h1>${title}</h1>
+  <img src="${dataUrl}" alt="${title}" />
+</body>
+</html>`);
+  printWindow.document.close();
+
+  const triggerPrint = () => { printWindow.focus(); printWindow.print(); };
+  const img = printWindow.document.querySelector('img');
+  if (img.complete) {
+    triggerPrint();
+  } else {
+    img.onload = triggerPrint;
+  }
+}
+
+document.getElementById('btn-print').addEventListener('click', printFloorPlan);
 
 /* =========================================================
    INIZIALIZZAZIONE SESSIONE
