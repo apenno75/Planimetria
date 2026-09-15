@@ -859,6 +859,7 @@ const FURNITURE_TYPES = {
   letto_singolo:      { label: 'Letto singolo',        cat: 'Notte',  ratio: 2.05, defaultW: 0.075 },
   letto_matrimoniale: { label: 'Letto matrimoniale',   cat: 'Notte',  ratio: 1.18, defaultW: 0.130 },
   comodino:           { label: 'Comodino',             cat: 'Notte',  ratio: 1.00, defaultW: 0.032 },
+  cassettiera:        { label: 'Cassettiera',          cat: 'Notte',  ratio: 0.45, defaultW: 0.085 },
   armadio:            { label: 'Armadio',              cat: 'Notte',  ratio: 0.45, defaultW: 0.120 },
   divano_2p:          { label: 'Divano 2 posti',       cat: 'Giorno', ratio: 0.50, defaultW: 0.120 },
   divano_3p:          { label: 'Divano 3 posti',       cat: 'Giorno', ratio: 0.37, defaultW: 0.160 },
@@ -872,6 +873,8 @@ const FURNITURE_TYPES = {
   cucina_top:         { label: 'Base cucina',          cat: 'Cucina', ratio: 0.41, defaultW: 0.140 },
   frigorifero:        { label: 'Frigorifero',          cat: 'Cucina', ratio: 1.08, defaultW: 0.050 },
   lavello:            { label: 'Lavello',              cat: 'Cucina', ratio: 0.61, defaultW: 0.070 },
+  lampada_stelo:      { label: 'Lampada a stelo',      cat: 'Varie',  ratio: 1.00, defaultW: 0.030 },
+  pianta:             { label: 'Pianta',               cat: 'Varie',  ratio: 1.00, defaultW: 0.038 },
 };
 const FURNITURE_LABELS = Object.fromEntries(Object.entries(FURNITURE_TYPES).map(([k, v]) => [k, v.label]));
 
@@ -914,6 +917,8 @@ function furnitureInnerSvg(kind) {
       return '<rect x="2" y="2" width="96" height="114" rx="6"/><rect x="8" y="10" width="38" height="34" rx="6" fill="none"/><rect x="54" y="10" width="38" height="34" rx="6" fill="none"/><line x1="2" y1="52" x2="98" y2="52"/>';
     case 'comodino':
       return '<rect x="4" y="4" width="92" height="92" rx="8"/><circle cx="50" cy="34" r="14" fill="none"/><line x1="4" y1="70" x2="96" y2="70"/>';
+    case 'cassettiera':
+      return '<rect x="2" y="2" width="96" height="41" rx="4"/><line x1="2" y1="31" x2="98" y2="31"/><circle cx="34" cy="37" r="3"/><circle cx="66" cy="37" r="3"/>';
     case 'armadio':
       return '<rect x="2" y="2" width="96" height="41" rx="4"/><line x1="50" y1="2" x2="50" y2="43"/><line x1="10" y1="10" x2="40" y2="35"/><line x1="90" y1="10" x2="60" y2="35"/>';
     case 'divano_2p':
@@ -940,6 +945,10 @@ function furnitureInnerSvg(kind) {
       return '<rect x="2" y="2" width="96" height="104" rx="6"/><rect x="10" y="10" width="80" height="88" rx="4" fill="none"/><line x1="10" y1="10" x2="26" y2="26"/>';
     case 'lavello':
       return '<rect x="2" y="2" width="96" height="57" rx="6"/><ellipse cx="34" cy="30" rx="20" ry="16" fill="none"/><ellipse cx="74" cy="30" rx="14" ry="12" fill="none"/><circle cx="54" cy="8" r="3"/>';
+    case 'lampada_stelo':
+      return '<circle cx="50" cy="50" r="46"/><circle cx="50" cy="50" r="27" fill="none"/><circle cx="50" cy="50" r="8"/>';
+    case 'pianta':
+      return '<circle cx="50" cy="50" r="46" fill="none"/><ellipse cx="50" cy="25" rx="11" ry="17"/><ellipse cx="50" cy="25" rx="11" ry="17" transform="rotate(72 50 50)"/><ellipse cx="50" cy="25" rx="11" ry="17" transform="rotate(144 50 50)"/><ellipse cx="50" cy="25" rx="11" ry="17" transform="rotate(216 50 50)"/><ellipse cx="50" cy="25" rx="11" ry="17" transform="rotate(288 50 50)"/><circle cx="50" cy="50" r="9"/>';
     default:
       return '<rect x="2" y="2" width="96" height="96" rx="6" fill="none"/>';
   }
