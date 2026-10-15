@@ -228,6 +228,41 @@
     user-select: none;
   }
 
+  /* Le due righe della toolbar: su desktop i contenitori sono "trasparenti"
+     (il layout resta quello di prima), su mobile diventano due righe distinte. */
+  .toolbar-row { display: contents; }
+  @media (min-width: 769px) {
+    #toolbar .toolbar-row-tools .group:last-child { border-right: 1px solid var(--line); }
+  }
+  @media (max-width: 768px) {
+    #toolbar {
+      flex-direction: column;
+      align-items: stretch;
+      overflow-x: visible;
+      white-space: normal;
+      gap: 6px;
+    }
+    #toolbar .toolbar-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    /* Riga 1: strumenti di disegno (scorrevole in orizzontale se serve) */
+    #toolbar .toolbar-row-tools {
+      overflow-x: auto;
+      white-space: nowrap;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    #toolbar .toolbar-row-tools::-webkit-scrollbar { display: none; }
+    /* Riga 2: zoom, livelli, carica foto / stampa (va a capo se non c'è spazio) */
+    #toolbar .toolbar-row-view {
+      flex-wrap: wrap;
+      row-gap: 6px;
+    }
+  }
+
   /* Su desktop, se la finestra o lo zoom del browser riducono lo spazio,
      la toolbar va a capo su più righe invece di essere tagliata
      (nascosta) dalla colonna dei dettagli con la scrollbar invisibile. */
@@ -609,6 +644,7 @@
       <!-- Area planimetria -->
       <section id="canvas-area">
         <div id="toolbar">
+          <div class="toolbar-row toolbar-row-tools">
           <div class="group">
             <button id="tool-room" data-tool="room"><span class="dot" style="background:var(--room)"></span>Stanza</button>
             <button id="btn-finish-room" style="display:none;">Fine</button>
@@ -630,6 +666,8 @@
             <select id="furniture-kind"></select>
             <button id="tool-furniture" data-tool="furniture"><span class="legend-icon" id="furniture-preview-dot"></span>Arredo</button>
           </div>
+          </div><!-- /toolbar-row-tools -->
+          <div class="toolbar-row toolbar-row-view">
           <div class="group">
             <button id="btn-zoom-out" title="Rimpicciolisci">-</button>
             <span id="zoom-level" style="font-size:0.8rem; min-width:38px; text-align:center;">100%</span>
@@ -648,6 +686,7 @@
             <input type="file" id="upload-input" accept="image/*" capture="environment" />
             <button id="btn-print" title="Stampa la planimetria con tutti i punti">Stampa</button>
           </div>
+          </div><!-- /toolbar-row-view -->
         </div>
 
         <div id="canvas-wrap">
