@@ -1349,6 +1349,7 @@ document.getElementById('empty-add-floor').addEventListener('click', addFloor);
 
 async function selectFloor(floorId) {
   state.activeFloorId = floorId;
+  loadLayerVisibility(floorId);
   state.selectedElement = null;
   state.unlockedFurnitureId = null;
   state.unlockedPointId = null;
@@ -1504,8 +1505,29 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+/* Visibilità dei livelli (Stanze, El., Idr., Gas, Arredi): ricordata per ogni piano
+   e per ogni utente nel browser (localStorage), così sopravvive al ricaricamento. */
+function layerStorageKey(floorId) {
+  return 'planimetrie:layers:' + (state.user ? state.user.id : 'anon') + ':' + floorId;
+}
+function saveLayerVisibility() {
+  if (!state.activeFloorId) return;
+  const vis = {};
+  document.querySelectorAll('.layer-toggle').forEach(cb => { vis[cb.dataset.layer] = cb.checked; });
+  try { localStorage.setItem(layerStorageKey(state.activeFloorId), JSON.stringify(vis)); } catch (e) { /* storage non disponibile */ }
+}
+function loadLayerVisibility(floorId) {
+  let vis = {};
+  try { vis = JSON.parse(localStorage.getItem(layerStorageKey(floorId)) || '{}') || {}; } catch (e) { vis = {}; }
+  document.querySelectorAll('.layer-toggle').forEach(cb => {
+    cb.checked = vis[cb.dataset.layer] !== false;   // default: visibile
+  });
+}
 document.querySelectorAll('.layer-toggle').forEach(cb => {
-  cb.addEventListener('change', drawCanvas);
+  cb.addEventListener('change', () => {
+    saveLayerVisibility();
+    drawCanvas();
+  });
 });
 
 /* =========================================================
@@ -2220,10 +2242,21 @@ function pointInPolygon(x, y, pts) {
   return inside;
 }
 
+/* Un elemento il cui livello è nascosto (casella disattivata) non è né visibile né selezionabile */
+function isLayerVisible(layer) {
+  const cb = document.querySelector('.layer-toggle[data-layer="' + layer + '"]');
+  return !cb || cb.checked;
+}
+function isPointLayerVisible(pt) {
+  const layer = pt.kind === 'idrico' ? 'idrico' : pt.kind === 'gas' ? 'gas' : 'presa';
+  return isLayerVisible(layer);
+}
+
 function findPointNear(x, y, thresholdPx = 20) {
   const threshold = (thresholdPx / state.zoom) / canvas.width;
   let closest = null, closestDist = Infinity;
   state.points.forEach(pt => {
+    if (!isPointLayerVisible(pt)) return;
     const d = Math.hypot(pt.x - x, pt.y - y);
     if (d < threshold && d < closestDist) { closest = pt; closestDist = d; }
   });
@@ -2231,6 +2264,7 @@ function findPointNear(x, y, thresholdPx = 20) {
 }
 
 function findRoomAt(x, y) {
+  if (!isLayerVisible('room')) return null;
   return state.rooms.find(r => r.points && r.points.length >= 3 && pointInPolygon(x, y, r.points)) || null;
 }
 
@@ -2268,6 +2302,7 @@ function toFurnitureLocal(item, imgX, imgY) {
    tenendo conto della rotazione. Controlla dall'ultimo disegnato
    (sopra gli altri) al primo. */
 function findFurnitureAt(normX, normY) {
+  if (!isLayerVisible('arredo')) return null;
   const x = normX * canvas.width, y = normY * canvas.height;
   for (let i = state.furniture.length - 1; i >= 0; i--) {
     const item = state.furniture[i];
