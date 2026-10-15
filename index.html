@@ -702,6 +702,7 @@
               </div>
               <div class="modal-footer">
                 <button id="modal-edit-btn">Modifica nel pannello</button>
+                <button id="modal-lock-btn" style="margin-top:8px; background:transparent; color:var(--accent); border:1.5px solid var(--accent);"></button>
               </div>
             </div>
           </div>
@@ -778,7 +779,34 @@ const state = {
   furnitureMoved: false,
   resizingFurniture: null,   // { item, handle, ... } durante il ridimensionamento
   rotatingFurniture: null,   // { item, ... } durante la rotazione
+  unlockedFurnitureId: null, // id dell'arredo sbloccato per spostamento/ridimensionamento (gli altri sono protetti)
+  unlockedPointId: null,     // id del punto (elettrico/idrico/gas) sbloccato per lo spostamento
 };
+
+/* Un arredo è modificabile (sposta/ridimensiona/ruota col mouse) solo se è
+   selezionato E sbloccato esplicitamente dall'utente. */
+let lastFurnitureTap = { id: null, time: 0 };
+let lastTouchLockToggle = 0;
+function isFurnitureUnlocked(item) {
+  return !!item && state.unlockedFurnitureId === item.id &&
+    !!state.selectedElement && state.selectedElement.type === 'furniture' &&
+    state.selectedElement.id === item.id;
+}
+function isPointUnlocked(pt) {
+  return !!pt && state.unlockedPointId === pt.id &&
+    !!state.selectedElement && state.selectedElement.type === 'point' &&
+    state.selectedElement.id === pt.id;
+}
+function setPointUnlocked(id, unlocked) {
+  state.unlockedPointId = unlocked ? id : null;
+  renderDetailsForm();
+  drawCanvas();
+}
+function setFurnitureUnlocked(id, unlocked) {
+  state.unlockedFurnitureId = unlocked ? id : null;
+  renderDetailsForm();
+  drawCanvas();
+}
 
 const POINT_COLORS = {
   presa_elettrica: { esistente: '#c9821f', nuova: '#2f8f4e' },
@@ -1116,6 +1144,8 @@ document.getElementById('empty-add-floor').addEventListener('click', addFloor);
 async function selectFloor(floorId) {
   state.activeFloorId = floorId;
   state.selectedElement = null;
+  state.unlockedFurnitureId = null;
+  state.unlockedPointId = null;
   exitRoomEditMode();
   renderDetailsForm();
   renderFloorList();
@@ -1354,7 +1384,7 @@ canvas.addEventListener('touchstart', (e) => {
 
     if (state.selectedElement && state.selectedElement.type === 'furniture') {
       const selItem = state.furniture.find(f => f.id === state.selectedElement.id);
-      const handle = selItem && findFurnitureHandleAt(selItem, normX, normY);
+      const handle = selItem && isFurnitureUnlocked(selItem) && findFurnitureHandleAt(selItem, normX, normY);
       if (handle) {
         if (handle.type === 'rotate') {
           state.rotatingFurniture = { item: selItem };
@@ -1368,18 +1398,34 @@ canvas.addEventListener('touchstart', (e) => {
 
     const pt = findPointNear(normX, normY);
     if (pt) {
-      state.draggingPoint = pt;
-      state.dragMoved = false;
       selectElement('point', pt.id);
-      return;
+      if (isPointUnlocked(pt)) {
+        state.draggingPoint = pt;
+        state.dragMoved = false;
+        return;
+      }
+      // punto bloccato: il gesto resta un normale pan della mappa
     }
 
-    const furn = findFurnitureAt(normX, normY);
+    const furn = pt ? null : findFurnitureAt(normX, normY);
     if (furn) {
-      state.draggingFurniture = furn;
-      state.furnitureMoved = false;
+      // doppio tap sull'arredo: blocca / sblocca
+      const now = Date.now();
+      const isDoubleTap = lastFurnitureTap.id === furn.id && now - lastFurnitureTap.time < 350;
+      lastFurnitureTap = { id: furn.id, time: now };
       selectElement('furniture', furn.id);
-      return;
+      if (isDoubleTap) {
+        lastFurnitureTap = { id: null, time: 0 };
+        lastTouchLockToggle = now;
+        setFurnitureUnlocked(furn.id, !isFurnitureUnlocked(furn));
+        return;
+      }
+      if (isFurnitureUnlocked(furn)) {
+        state.draggingFurniture = furn;
+        state.furnitureMoved = false;
+        return;
+      }
+      // arredo bloccato: il gesto resta un normale pan della mappa
     }
 
     state.isDragging = true;
@@ -1516,7 +1562,7 @@ canvas.addEventListener('mousedown', (e) => {
   // (ridimensionamento agli angoli, rotazione in alto)
   if (state.selectedElement && state.selectedElement.type === 'furniture') {
     const selItem = state.furniture.find(f => f.id === state.selectedElement.id);
-    const handle = selItem && findFurnitureHandleAt(selItem, normX, normY);
+    const handle = selItem && isFurnitureUnlocked(selItem) && findFurnitureHandleAt(selItem, normX, normY);
     if (handle) {
       if (handle.type === 'rotate') {
         state.rotatingFurniture = { item: selItem };
@@ -1530,18 +1576,24 @@ canvas.addEventListener('mousedown', (e) => {
 
   const pt = findPointNear(normX, normY);
   if (pt) {
-    state.draggingPoint = pt;
-    state.dragMoved = false;
     selectElement('point', pt.id);
-    return;
+    if (isPointUnlocked(pt)) {
+      state.draggingPoint = pt;
+      state.dragMoved = false;
+      return;
+    }
+    // punto bloccato: il gesto resta un normale pan della mappa
   }
 
-  const furn = findFurnitureAt(normX, normY);
+  const furn = pt ? null : findFurnitureAt(normX, normY);
   if (furn) {
-    state.draggingFurniture = furn;
-    state.furnitureMoved = false;
     selectElement('furniture', furn.id);
-    return;
+    if (isFurnitureUnlocked(furn)) {
+      state.draggingFurniture = furn;
+      state.furnitureMoved = false;
+      return;
+    }
+    // arredo bloccato: il gesto resta un normale pan della mappa
   }
 
   state.isDragging = true;
@@ -1674,6 +1726,18 @@ async function persistFurnitureChange() {
   }
 }
 
+/* Doppio click sull'arredo: blocca / sblocca (alternativa al pulsante nel pannello dettagli) */
+canvas.addEventListener('dblclick', (e) => {
+  if (state.activeTool || state.editingRoomId) return;
+  if (Date.now() - lastTouchLockToggle < 800) return; // già gestito dal doppio tap
+  const { normX, normY } = clientToNormalized(e.clientX, e.clientY);
+  if (findPointNear(normX, normY)) return;
+  const furn = findFurnitureAt(normX, normY);
+  if (!furn) return;
+  selectElement('furniture', furn.id);
+  setFurnitureUnlocked(furn.id, !isFurnitureUnlocked(furn));
+});
+
 /* Cambia il cursore quando si passa sopra un punto, un vertice
    trascinabile o un arredo (corpo o maniglie) */
 canvas.addEventListener('mousemove', (e) => {
@@ -1691,7 +1755,7 @@ canvas.addEventListener('mousemove', (e) => {
 
   if (state.selectedElement && state.selectedElement.type === 'furniture') {
     const selItem = state.furniture.find(f => f.id === state.selectedElement.id);
-    const handle = selItem && findFurnitureHandleAt(selItem, normX, normY);
+    const handle = selItem && isFurnitureUnlocked(selItem) && findFurnitureHandleAt(selItem, normX, normY);
     if (handle) {
       canvas.style.cursor = handle.type === 'rotate' ? 'alias' : 'nwse-resize';
       return;
@@ -1699,10 +1763,10 @@ canvas.addEventListener('mousemove', (e) => {
   }
 
   const pt = findPointNear(normX, normY);
-  if (pt) { canvas.style.cursor = 'grab'; return; }
+  if (pt) { canvas.style.cursor = isPointUnlocked(pt) ? 'grab' : 'pointer'; return; }
 
   const furn = findFurnitureAt(normX, normY);
-  canvas.style.cursor = furn ? 'move' : 'crosshair';
+  canvas.style.cursor = furn ? (isFurnitureUnlocked(furn) ? 'move' : 'pointer') : 'crosshair';
 });
 
 
@@ -1805,11 +1869,12 @@ function drawCanvas() {
     const color = (POINT_COLORS[pt.kind] && POINT_COLORS[pt.kind][pt.status]) || '#555';
 
     if (isSelected) {
+      const unlocked = isPointUnlocked(pt);
       ctx.beginPath();
       ctx.arc(x, y, 16 / state.zoom, 0, Math.PI * 2);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2 / state.zoom;
-      ctx.setLineDash([3 / state.zoom, 3 / state.zoom]);
+      ctx.strokeStyle = unlocked ? color : '#8a8a8a';
+      ctx.lineWidth = (unlocked ? 3 : 2) / state.zoom;
+      ctx.setLineDash(unlocked ? [] : [3 / state.zoom, 3 / state.zoom]);
       ctx.stroke();
       ctx.setLineDash([]);
     }
@@ -1852,12 +1917,15 @@ function drawCanvas() {
       ctx.drawImage(furnImg, -wPx / 2, -hPx / 2, wPx, hPx);
 
       if (isSelected) {
-        ctx.strokeStyle = '#2f5d50';
+        const unlocked = isFurnitureUnlocked(item);
+        ctx.strokeStyle = unlocked ? '#2f5d50' : '#8a8a8a';
         ctx.lineWidth = 2 / state.zoom;
         ctx.setLineDash([4 / state.zoom, 3 / state.zoom]);
         ctx.strokeRect(-wPx / 2, -hPx / 2, wPx, hPx);
         ctx.setLineDash([]);
+      }
 
+      if (isSelected && isFurnitureUnlocked(item)) {
         const handleR = 6 / state.zoom;
         const corners = [
           [-wPx / 2, -hPx / 2], [wPx / 2, -hPx / 2],
@@ -2036,7 +2104,17 @@ document.getElementById('room-edit-done-btn').addEventListener('click', exitRoom
 /* =========================================================
    GESTIONE MODALE DETTAGLI PUNTO
    ========================================================= */
+let modalPoint = null;
+function updateModalLockBtn() {
+  const btn = document.getElementById('modal-lock-btn');
+  if (!btn || !modalPoint) return;
+  btn.textContent = isPointUnlocked(modalPoint)
+    ? '🔓 Sbloccato — clicca per bloccare'
+    : '🔒 Sblocca per spostare il punto';
+}
 function openPointModal(point) {
+  modalPoint = point;
+  updateModalLockBtn();
   const modal = document.getElementById('point-modal');
   const room = state.rooms.find(r => r.id === point.room_id);
   
@@ -2054,6 +2132,11 @@ function closePointModal() {
 }
 
 document.getElementById('modal-close-btn').addEventListener('click', closePointModal);
+document.getElementById('modal-lock-btn').addEventListener('click', () => {
+  if (!modalPoint) return;
+  setPointUnlocked(modalPoint.id, !isPointUnlocked(modalPoint));
+  closePointModal();
+});
 document.getElementById('modal-edit-btn').addEventListener('click', () => {
   closePointModal();
   if (window.innerWidth <= 768) setMobileTab('details');
@@ -2163,6 +2246,8 @@ canvas.addEventListener('click', async (e) => {
   if (room) { selectElement('room', room.id); return; }
   
   state.selectedElement = null;
+  state.unlockedFurnitureId = null;
+  state.unlockedPointId = null;
   renderDetailsForm();
   renderLayerList();
   drawCanvas();
@@ -2264,6 +2349,12 @@ function renderLayerList() {
 }
 
 function selectElement(type, id) {
+  const sameUnlocked = type === 'furniture' && state.unlockedFurnitureId === id &&
+    state.selectedElement && state.selectedElement.type === 'furniture' && state.selectedElement.id === id;
+  if (!sameUnlocked) state.unlockedFurnitureId = null;
+  const samePointUnlocked = type === 'point' && state.unlockedPointId === id &&
+    state.selectedElement && state.selectedElement.type === 'point' && state.selectedElement.id === id;
+  if (!samePointUnlocked) state.unlockedPointId = null;
   state.selectedElement = { type, id };
   renderDetailsForm();
   renderLayerList();
@@ -2376,9 +2467,21 @@ function renderDetailsForm() {
         <label>Note</label>
         <textarea id="detail-point-notes" placeholder="es. altezza da terra, misure...">${escapeHtml(point.notes || '')}</textarea>
       </div>
+      <button type="button" id="detail-point-lock" style="width:100%; padding:9px 12px; margin:0 0 8px; border-radius:8px; cursor:pointer; font:inherit; font-weight:500; border:1.5px solid var(--accent); ${isPointUnlocked(point) ? 'background:var(--accent); color:#fff;' : 'background:transparent; color:var(--accent);'}">
+        ${isPointUnlocked(point) ? '🔓 Sbloccato — clicca per bloccare' : '🔒 Bloccato — clicca per sbloccare'}
+      </button>
+      <p style="font-size:0.78rem; color:#7a7a7a; margin:0 0 12px;">
+        ${isPointUnlocked(point)
+          ? "Ora puoi trascinare il punto sulla mappa per spostarlo."
+          : "Il punto è protetto. Sbloccalo con il pulsante qui sopra per poterlo spostare."}
+      </p>
       <button class="save-btn" id="detail-save">Salva</button>
       <button class="delete" id="detail-delete">Elimina punto</button>
     `;
+
+    document.getElementById('detail-point-lock').addEventListener('click', () => {
+      setPointUnlocked(point.id, !isPointUnlocked(point));
+    });
 
     document.getElementById('detail-save').addEventListener('click', async () => {
       const status = document.getElementById('detail-point-status').value;
@@ -2444,12 +2547,21 @@ function renderDetailsForm() {
         <label>Rotazione (gradi)</label>
         <input type="number" id="detail-furn-rotation" value="${Math.round(item.rotation || 0)}" min="0" max="359" step="1" />
       </div>
-      <p style="font-size:0.78rem; color:#7a7a7a; margin:-4px 0 12px;">
-        Puoi anche trascinare l'arredo per spostarlo, trascinare le maniglie agli angoli per ridimensionarlo e quella in alto per ruotarlo.
+      <button type="button" id="detail-furn-lock" style="width:100%; padding:9px 12px; margin:0 0 8px; border-radius:8px; cursor:pointer; font:inherit; font-weight:500; border:1.5px solid var(--accent); ${isFurnitureUnlocked(item) ? 'background:var(--accent); color:#fff;' : 'background:transparent; color:var(--accent);'}">
+        ${isFurnitureUnlocked(item) ? '🔓 Sbloccato — clicca per bloccare' : '🔒 Bloccato — clicca per sbloccare'}
+      </button>
+      <p style="font-size:0.78rem; color:#7a7a7a; margin:0 0 12px;">
+        ${isFurnitureUnlocked(item)
+          ? "Ora puoi trascinare l'arredo per spostarlo, le maniglie agli angoli per ridimensionarlo e quella in alto per ruotarlo."
+          : "L'arredo è protetto. Sbloccalo con il pulsante qui sopra (o con un doppio click / doppio tap sull'arredo) per spostarlo o ridimensionarlo."}
       </p>
       <button class="save-btn" id="detail-save">Salva</button>
       <button class="delete" id="detail-delete">Elimina arredo</button>
     `;
+
+    document.getElementById('detail-furn-lock').addEventListener('click', () => {
+      setFurnitureUnlocked(item.id, !isFurnitureUnlocked(item));
+    });
 
     document.getElementById('detail-save').addEventListener('click', async () => {
       const label = document.getElementById('detail-furn-label').value.trim();
