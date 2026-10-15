@@ -303,6 +303,31 @@
     align-items: center;
     justify-content: center;
   }
+  /* Contenitore del canvas: su mobile si comporta come prima (centrato, senza scroll);
+     su desktop la mappa riempie la larghezza del frame e scorre in verticale se più alta. */
+  #canvas-scroll {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  @media (min-width: 769px) {
+    #canvas-scroll {
+      align-items: flex-start;
+      justify-content: flex-start;
+      overflow-x: hidden;
+      overflow-y: auto;
+      scrollbar-gutter: stable;
+    }
+    #canvas-scroll #plan-canvas {
+      margin: auto;          /* centrata se più piccola del frame, allineata in alto se più alta */
+      flex-shrink: 0;
+      max-width: none;
+      max-height: none;
+    }
+  }
   #plan-canvas {
     background: #fff;
     cursor: crosshair;
@@ -368,6 +393,33 @@
     cursor: pointer;
     flex-shrink: 0;
   }
+
+  /* Menù a tendina a scelta multipla (voci punto elettrico) */
+  .ms { display: inline-block; max-width: 100%; }
+  .ms-btn {
+    display: inline-flex; align-items: center; justify-content: space-between; gap: 6px;
+    min-width: 110px; max-width: 170px;
+    border: 1px solid var(--line); background: #fff; color: inherit;
+    border-radius: var(--radius); cursor: pointer; font: inherit; font-size: 0.82rem;
+    padding: 8px 10px; text-align: left;
+  }
+  .ms-btn .ms-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ms-btn.empty .ms-text { color: #9a9a9a; }
+  .ms-btn::after { content: '▾'; font-size: 0.8rem; flex-shrink: 0; }
+  .ms-btn.invalid { border-color: #b23a3a; }
+  #details .ms { display: block; }
+  #details .ms-btn { width: 100%; max-width: none; padding: 8px 10px; }
+  .ms-panel {
+    position: fixed; z-index: 300; background: #fff; border: 1px solid var(--line);
+    border-radius: var(--radius); box-shadow: 0 6px 20px rgba(0,0,0,0.18); padding: 4px;
+    max-height: 60vh; overflow-y: auto;
+  }
+  .ms-panel label {
+    display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 6px;
+    font-size: 0.88rem; cursor: pointer; user-select: none; white-space: nowrap;
+  }
+  .ms-panel label:hover { background: var(--accent-soft); }
+  .ms-panel input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
 
   /* Legenda Colori Mappa */
   #map-legend {
@@ -658,6 +710,7 @@
               <option value="esistente">Esistente</option>
               <option value="nuova">Nuovo</option>
             </select>
+            <span id="point-label-ms-host" style="display:none;"></span>
             <button id="tool-point" data-tool="point"><span class="legend-icon" id="point-preview-dot"></span>Punto</button>
           </div>
           <div class="group">
@@ -692,7 +745,7 @@
             <p>Nessun piano selezionato.</p>
             <button id="empty-add-floor">Aggiungi il primo piano</button>
           </div>
-          <canvas id="plan-canvas" style="display:none;"></canvas>
+          <div id="canvas-scroll"><canvas id="plan-canvas" style="display:none;"></canvas></div>
 
           <!-- Banner modalità modifica forma stanza -->
           <div id="room-edit-banner" style="display:none;">
@@ -711,6 +764,10 @@
               <div>Elettrico</div>
               <div class="legend-item"><span class="legend-icon" id="leg-el-ex"></span></div>
               <div class="legend-item"><span class="legend-icon" id="leg-el-nu"></span></div>
+
+              <div>TV</div>
+              <div class="legend-item"><span class="legend-icon" id="leg-tv-ex"></span></div>
+              <div class="legend-item"><span class="legend-icon" id="leg-tv-nu"></span></div>
 
               <div>Idrico</div>
               <div class="legend-item"><span class="legend-icon" id="leg-id-ex"></span></div>
@@ -852,8 +909,105 @@ const POINT_COLORS = {
 };
 const KIND_LABELS = { presa_elettrica: 'Elettrico', idrico: 'Idrico', gas: 'Gas' };
 
+/* Voci selezionabili per i punti elettrici (salvate nel campo "label", separate da virgola) */
+const ELECTRIC_LABEL_OPTIONS = ['Prese', 'Interruttori', 'Bipolari', 'TV'];
+function parseElectricLabels(label) {
+  if (!label) return [];
+  const parts = String(label).split(',').map(x => x.trim().toLowerCase());
+  return ELECTRIC_LABEL_OPTIONS.filter(o => parts.includes(o.toLowerCase()));
+}
+/* Un punto elettrico che contiene la voce TV usa l'icona TV al posto della saetta */
+function pointIconKind(pt) {
+  return pt.kind === 'presa_elettrica' && parseElectricLabels(pt.label).includes('TV') ? 'tv' : pt.kind;
+}
+function tvIconInner(color, outline) {
+  return `<path d="M8 3.2l4 3.6 4-3.6" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="2.5" y="7" width="19" height="13.5" rx="2.5" fill="${color}" ${outline}/>
+    <rect x="5" y="9.5" width="11.5" height="8.5" rx="1.2" fill="#fff" fill-opacity="0.92"/>
+    <circle cx="19" cy="12.2" r="1" fill="#fff"/><circle cx="19" cy="15.8" r="1" fill="#fff"/>`;
+}
+
+/* Menù a tendina a scelta multipla (il pannello è "fixed" così non viene tagliato dalle barre scorrevoli) */
+let closeOpenMultiSelect = null;
+function createMultiSelect({ options, selected = [], placeholder = 'Seleziona…', onChange }) {
+  const wrap = document.createElement('div');
+  wrap.className = 'ms';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'ms-btn';
+  const text = document.createElement('span');
+  text.className = 'ms-text';
+  btn.appendChild(text);
+  wrap.appendChild(btn);
+
+  const sel = new Set(selected);
+  const panel = document.createElement('div');
+  panel.className = 'ms-panel';
+  const checkboxes = [];
+  options.forEach(opt => {
+    const lab = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = sel.has(opt);
+    cb.addEventListener('change', () => {
+      if (cb.checked) sel.add(opt); else sel.delete(opt);
+      refresh();
+      if (onChange) onChange(getValue());
+    });
+    checkboxes.push([opt, cb]);
+    lab.appendChild(cb);
+    lab.appendChild(document.createTextNode(opt));
+    panel.appendChild(lab);
+  });
+
+  function getValue() { return options.filter(o => sel.has(o)); }
+  function refresh() {
+    const v = getValue();
+    text.textContent = v.length ? v.join(', ') : placeholder;
+    btn.classList.toggle('empty', !v.length);
+    if (v.length) btn.classList.remove('invalid');
+  }
+  function setValue(vals) {
+    sel.clear(); vals.forEach(v => sel.add(v));
+    checkboxes.forEach(([o, cb]) => { cb.checked = sel.has(o); });
+    refresh();
+  }
+  function onOutside(e) { if (!panel.contains(e.target) && !btn.contains(e.target)) close(); }
+  function onKey(e) { if (e.key === 'Escape') close(); }
+  function onScroll(e) { if (!panel.contains(e.target)) close(); }
+  function close() {
+    if (panel.parentNode) panel.parentNode.removeChild(panel);
+    document.removeEventListener('pointerdown', onOutside, true);
+    document.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('scroll', onScroll, true);
+    window.removeEventListener('resize', close);
+    if (closeOpenMultiSelect === close) closeOpenMultiSelect = null;
+  }
+  function open() {
+    if (closeOpenMultiSelect) closeOpenMultiSelect();
+    document.body.appendChild(panel);
+    const r = btn.getBoundingClientRect();
+    panel.style.minWidth = Math.max(r.width, 160) + 'px';
+    panel.style.left = Math.max(4, Math.min(r.left, window.innerWidth - panel.offsetWidth - 4)) + 'px';
+    const below = r.bottom + 4;
+    panel.style.top = (below + panel.offsetHeight > window.innerHeight
+      ? Math.max(4, r.top - panel.offsetHeight - 4) : below) + 'px';
+    document.addEventListener('pointerdown', onOutside, true);
+    document.addEventListener('keydown', onKey, true);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', close);
+    closeOpenMultiSelect = close;
+  }
+  btn.addEventListener('click', () => { panel.parentNode ? close() : open(); });
+  refresh();
+  return { el: wrap, btn, getValue, setValue, close };
+}
+
 /* SVG STRINGS GENERATOR */
 function getSvgIconString(kind, color) {
+  if (kind === 'tv') {
+    return `<svg viewBox="0 0 24 24" width="100%" height="100%">${tvIconInner(color, '')}</svg>`;
+  }
   if (kind === 'gas') {
     return `<svg viewBox="0 0 24 24" width="100%" height="100%">
       <path d="M12 2c0 3.5-3 5.5-3 9.5a6 6 0 0 0 12 0c0-4-3-6-3-9.5-1 2-2 3-3 3s-2-1-3-3z" fill="${color}"/>
@@ -879,7 +1033,9 @@ function getIconImage(kind, color) {
   // così i simboli compaiono subito senza dover muovere/zoomare la mappa.
   img.onload = () => drawCanvas();
   let svgStr = '';
-  if (kind === 'gas') {
+  if (kind === 'tv') {
+    svgStr = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">${tvIconInner(color, 'stroke="#ffffff" stroke-width="1.2"')}</svg>`;
+  } else if (kind === 'gas') {
     svgStr = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
       <path d="M12 2c0 3.5-3 5.5-3 9.5a6 6 0 0 0 12 0c0-4-3-6-3-9.5-1 2-2 3-3 3s-2-1-3-3z" fill="${color}" stroke="#ffffff" stroke-width="1.2"/>
       <path d="M12 13c-1 0-2 1-2 2.5a2 2 0 0 0 4 0c0-1.5-1-2.5-2-2.5z" fill="#FFEB3B"/>
@@ -895,12 +1051,23 @@ function getIconImage(kind, color) {
   return img;
 }
 
+/* Voci del punto elettrico da piazzare (obbligatorie quando il tipo è "Elettrico") */
+const toolbarPointMs = createMultiSelect({
+  options: ELECTRIC_LABEL_OPTIONS,
+  placeholder: 'Voci…',
+  onChange: () => updatePointPreviewDot(),
+});
+document.getElementById('point-label-ms-host').appendChild(toolbarPointMs.el);
+
 function updatePointPreviewDot() {
   const kind = document.getElementById('point-kind').value;
   const status = document.getElementById('point-status').value;
   const dot = document.getElementById('point-preview-dot');
   const color = (POINT_COLORS[kind] && POINT_COLORS[kind][status]) || '#555';
-  if (dot) dot.innerHTML = getSvgIconString(kind, color);
+  const isElectric = kind === 'presa_elettrica';
+  document.getElementById('point-label-ms-host').style.display = isElectric ? '' : 'none';
+  const iconKind = isElectric && toolbarPointMs.getValue().includes('TV') ? 'tv' : kind;
+  if (dot) dot.innerHTML = getSvgIconString(iconKind, color);
 }
 document.getElementById('point-kind').addEventListener('change', updatePointPreviewDot);
 document.getElementById('point-status').addEventListener('change', updatePointPreviewDot);
@@ -1055,6 +1222,8 @@ updateFurniturePreviewDot();
 // Inizializza icone legenda
 document.getElementById('leg-el-ex').innerHTML = getSvgIconString('presa_elettrica', POINT_COLORS.presa_elettrica.esistente);
 document.getElementById('leg-el-nu').innerHTML = getSvgIconString('presa_elettrica', POINT_COLORS.presa_elettrica.nuova);
+document.getElementById('leg-tv-ex').innerHTML = getSvgIconString('tv', POINT_COLORS.presa_elettrica.esistente);
+document.getElementById('leg-tv-nu').innerHTML = getSvgIconString('tv', POINT_COLORS.presa_elettrica.nuova);
 document.getElementById('leg-id-ex').innerHTML = getSvgIconString('idrico', POINT_COLORS.idrico.esistente);
 document.getElementById('leg-id-nu').innerHTML = getSvgIconString('idrico', POINT_COLORS.idrico.nuova);
 document.getElementById('leg-gas-ex').innerHTML = getSvgIconString('gas', POINT_COLORS.gas.esistente);
@@ -1230,6 +1399,7 @@ async function loadActiveFloorPlan() {
     document.getElementById('empty-state').style.display = 'none';
     const canvas = document.getElementById('plan-canvas');
     canvas.style.display = 'block';
+    fitCanvasToFrame();
     await loadRoomsAndPoints();
     drawCanvas();
   };
@@ -1376,6 +1546,30 @@ function toBufferPoint(clientX, clientY) {
     x: (clientX - rect.left) * scaleX,
     y: (clientY - rect.top) * scaleY,
   };
+}
+
+/* SOLO DESKTOP (>= 769px): la mappa viene ingrandita per occupare tutta la larghezza
+   del frame centrale (mantenendo le proporzioni), invece di restare alla dimensione
+   originale dell'immagine. Le coordinate restano corrette perché toBufferPoint()
+   usa già il rettangolo CSS reale del canvas. Su mobile non cambia nulla. */
+function fitCanvasToFrame() {
+  if (!state.image) return;
+  if (window.innerWidth < 769) {
+    canvas.style.width = '';
+    canvas.style.height = '';
+    return;
+  }
+  const box = document.getElementById('canvas-scroll');
+  const availW = box.clientWidth;
+  if (!availW) return;
+  // La mappa occupa tutta la larghezza del frame; se è più alta, si scorre in verticale.
+  const scale = availW / state.image.width;
+  canvas.style.width = Math.floor(state.image.width * scale) + 'px';
+  canvas.style.height = Math.floor(state.image.height * scale) + 'px';
+}
+window.addEventListener('resize', fitCanvasToFrame);
+if (typeof ResizeObserver !== 'undefined') {
+  new ResizeObserver(fitCanvasToFrame).observe(document.getElementById('canvas-scroll'));
 }
 
 /* Converte coordinate client (mouse/touch) in coordinate normalizzate (0-1) sull'immagine */
@@ -1917,7 +2111,7 @@ function drawCanvas() {
     }
 
     // Disegno Icona SVG
-    const iconImg = getIconImage(pt.kind, color);
+    const iconImg = getIconImage(pointIconKind(pt), color);
     const size = (isSelected ? 26 : 22) / state.zoom;
     ctx.drawImage(iconImg, x - size / 2, y - size / 2, size, size);
 
@@ -2198,15 +2392,26 @@ canvas.addEventListener('click', async (e) => {
     const kind = document.getElementById('point-kind').value;
     const status = document.getElementById('point-status').value;
 
+    const newPoint = {
+      floor_plan_id: state.activeFloorPlan.id,
+      user_id: state.user.id,
+      kind, status,
+      x: normX,
+      y: normY,
+    };
+    if (kind === 'presa_elettrica') {
+      const voci = toolbarPointMs.getValue();
+      if (!voci.length) {
+        toolbarPointMs.btn.classList.add('invalid');
+        alert('Per un punto elettrico seleziona almeno una voce (Prese, Interruttori, Bipolari, TV) dal menù a tendina accanto a "Punto".');
+        return;
+      }
+      newPoint.label = voci.join(', ');
+    }
+
     const { data, error } = await supabase
       .from('installation_points')
-      .insert({
-        floor_plan_id: state.activeFloorPlan.id,
-        user_id: state.user.id,
-        kind, status,
-        x: normX, 
-        y: normY,
-      })
+      .insert(newPoint)
       .select()
       .single();
       
@@ -2399,6 +2604,7 @@ function selectElement(type, id) {
 }
 
 function renderDetailsForm() {
+  if (closeOpenMultiSelect) closeOpenMultiSelect();
   const emptyEl = document.getElementById('details-empty');
   const formEl = document.getElementById('details-form');
   const sel = state.selectedElement;
@@ -2476,6 +2682,7 @@ function renderDetailsForm() {
     const point = state.points.find(p => p.id === sel.id);
     if (!point) { state.selectedElement = null; renderDetailsForm(); return; }
 
+    const isElectricPoint = point.kind === 'presa_elettrica';
     const roomOptions = ['<option value="">— nessuna —</option>']
       .concat(state.rooms.map(r => `<option value="${r.id}" ${point.room_id === r.id ? 'selected' : ''}>${escapeHtml(r.name)}</option>`))
       .join('');
@@ -2492,10 +2699,18 @@ function renderDetailsForm() {
           <option value="nuova" ${point.status === 'nuova' ? 'selected' : ''}>Nuovo</option>
         </select>
       </div>
+      ${isElectricPoint ? `
+      <div class="field">
+        <label>Voci <span style="color:#b23a3a;">* obbligatorio</span></label>
+        <div id="detail-point-label-ms"></div>
+        ${point.label && !parseElectricLabels(point.label).length
+          ? `<div style="font-size:0.75rem; color:#7a7a7a; margin-top:4px;">Etichetta precedente: «${escapeHtml(point.label)}» — scegli le voci per sostituirla.</div>`
+          : ''}
+      </div>` : `
       <div class="field">
         <label>Etichetta (facoltativa)</label>
-        <input type="text" id="detail-point-label" value="${escapeHtml(point.label || '')}" placeholder="es. Presa TV" />
-      </div>
+        <input type="text" id="detail-point-label" value="${escapeHtml(point.label || '')}" placeholder="es. Presa cucina" />
+      </div>`}
       <div class="field">
         <label>Stanza di appartenenza</label>
         <select id="detail-point-room">${roomOptions}</select>
@@ -2516,13 +2731,34 @@ function renderDetailsForm() {
       <button class="delete" id="detail-delete">Elimina punto</button>
     `;
 
+    let detailPointMs = null;
+    if (isElectricPoint) {
+      detailPointMs = createMultiSelect({
+        options: ELECTRIC_LABEL_OPTIONS,
+        selected: parseElectricLabels(point.label),
+        placeholder: 'Seleziona le voci…',
+      });
+      document.getElementById('detail-point-label-ms').appendChild(detailPointMs.el);
+    }
+
     document.getElementById('detail-point-lock').addEventListener('click', () => {
       setPointUnlocked(point.id, !isPointUnlocked(point));
     });
 
     document.getElementById('detail-save').addEventListener('click', async () => {
       const status = document.getElementById('detail-point-status').value;
-      const label = document.getElementById('detail-point-label').value.trim();
+      let label;
+      if (isElectricPoint) {
+        const voci = detailPointMs.getValue();
+        if (!voci.length) {
+          detailPointMs.btn.classList.add('invalid');
+          alert('Seleziona almeno una voce per il punto elettrico (Prese, Interruttori, Bipolari, TV).');
+          return;
+        }
+        label = voci.join(', ');
+      } else {
+        label = document.getElementById('detail-point-label').value.trim();
+      }
       const room_id = document.getElementById('detail-point-room').value || null;
       const notes = document.getElementById('detail-point-notes').value.trim();
       const { error } = await supabase.from('installation_points')
